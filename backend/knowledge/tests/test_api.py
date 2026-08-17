@@ -13,6 +13,7 @@ from netCDF4 import Dataset
 
 from knowledge.classification import classify_assertion
 from knowledge.environment import nasa_power_series, owda_series
+from knowledge.environmental_search import environmental_event_types_for_query
 from knowledge.models import (
     Assertion,
     AssertionRelation,
@@ -877,6 +878,85 @@ class ContextAPITests(TestCase):
         self.assertEqual(response.data["exploration_context"]["query_mode"], "topic")
         context.refresh_from_db()
         self.assertEqual((context.center.x, context.center.y), (original_center.x, original_center.y))
+
+    def test_environmental_category_recognition_does_not_capture_concrete_events(self):
+        self.assertEqual(environmental_event_types_for_query("Erdbeben"), ["earthquake"])
+        self.assertEqual(environmental_event_types_for_query("Erdbeben von Lissabon"), [])
+        self.assertEqual(
+            set(environmental_event_types_for_query("séismes et éruptions volcaniques")),
+            {"earthquake", "volcano"},
+        )
+        self.assertEqual(
+            set(environmental_event_types_for_query("Naturkatastrophen")),
+            set(EnvironmentalEvent.Type.values) - {EnvironmentalEvent.Type.OTHER},
+        )
+
+    @patch("knowledge.views.resolve_wikipedia_entity")
+    def test_natural_event_category_is_global_and_has_no_time_filter(self, resolve_entity):
+        context = ExplorationContext.objects.create(
+            place_name="Agra",
+            center=Point(78.0081, 27.1767, srid=4326),
+            time_focus_year=1565,
+            time_window_years=0,
+        )
+
+        response = self.client.post(
+            f"/api/v1/exploration-contexts/{context.id}/resolve/",
+            {"query": "Vulkanausbrüche", "base_version": context.version},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["resolved_as"], "environment")
+        self.assertEqual(response.data["environment"]["event_types"], ["volcano"])
+        self.assertEqual(response.data["exploration_context"]["anchor_mode"], "environment")
+        self.assertEqual(response.data["exploration_context"]["query_mode"], "environment")
+        self.assertEqual(response.data["exploration_context"]["place_name"], "Agra")
+        self.assertEqual(response.data["exploration_context"]["time_focus_year"], 1565)
+        resolve_entity.assert_not_called()
+
+    def test_environmental_event_search_ignores_context_place_and_time(self):
+        earthquake = EnvironmentalEvent.objects.create(
+            event_type=EnvironmentalEvent.Type.EARTHQUAKE,
+            name="Testbeben im Pazifik",
+            description="Ein räumlich entferntes Testereignis.",
+            geometry=Point(-155.0, 19.0, srid=4326),
+            time_start_year=2024,
+            time_end_year=2024,
+            status=Assertion.Status.VERIFIED,
+            confidence=Decimal("0.9"),
+        )
+        EnvironmentalEvent.objects.create(
+            event_type=EnvironmentalEvent.Type.STORM_SURGE,
+            name="Nicht gewählte Sturmflut",
+            geometry=Point(8.5, 54.0, srid=4326),
+            time_start_year=1962,
+            time_end_year=1962,
+            status=Assertion.Status.VERIFIED,
+            confidence=Decimal("0.9"),
+        )
+        context = ExplorationContext.objects.create(
+            place_name="Agra",
+            center=Point(78.0081, 27.1767, srid=4326),
+            time_focus_year=1565,
+            environmental_event_types=[EnvironmentalEvent.Type.EARTHQUAKE],
+            query="Erdbeben",
+            query_mode=ExplorationContext.QueryMode.ENVIRONMENT,
+            anchor_mode=ExplorationContext.AnchorMode.ENVIRONMENT,
+        )
+
+        response = self.client.get(f"/api/v1/exploration-contexts/{context.id}/environmental-events/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["events"][0]["id"], str(earthquake.id))
+        self.assertEqual(response.data["events"][0]["map_point"], {"latitude": 19.0, "longitude": -155.0})
+        self.assertEqual(response.data["selection"]["scope"], "global")
+        self.assertEqual(response.data["selection"]["time_scope"], "all")
+        self.assertFalse(response.data["selection"]["place_filter_applied"])
+        self.assertFalse(response.data["selection"]["time_filter_applied"])
+        self.assertEqual(response.data["time_extent"], {"start_year": 2024, "end_year": 2024})
+        self.assertEqual(response.data["exploration_context"]["query_mode"], "environment")
 
     @patch("knowledge.views.resolve_wikipedia_entity")
     def test_event_query_keeps_reference_place_and_sets_event_period(self, resolve_entity):

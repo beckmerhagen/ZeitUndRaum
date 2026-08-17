@@ -4,6 +4,7 @@ import {
   ApiError,
   createExplorationContext,
   loadEventDossier,
+  loadEnvironmentalEvents,
   loadExplorationContext,
   loadExplorationResults,
   loadExplorationTimeline,
@@ -35,6 +36,7 @@ const DEFAULT_CONTEXT = {
   perspectives: [],
   languages: FALLBACK_LANGUAGES,
   include_candidates: true,
+  environmental_event_types: [],
 };
 
 const RESEARCH_STATUS_LABELS = {
@@ -117,7 +119,7 @@ function mergeExploration(base, patch) {
   return merged;
 }
 
-function MapController({ exploration, eventPlaces, onPlaceChange, onZoomChange }) {
+function MapController({ exploration, eventPlaces, environmentalEvents, onPlaceChange, onZoomChange }) {
   const map = useMapEvents({
     click(event) {
       onPlaceChange({
@@ -136,6 +138,18 @@ function MapController({ exploration, eventPlaces, onPlaceChange, onZoomChange }
   useEffect(() => {
     if (exploration.anchor_mode === "time") {
       map.flyTo([22, 12], 2, { duration: 0.65 });
+    } else if (exploration.anchor_mode === "environment") {
+      const points = environmentalEvents.filter((item) => item.map_point);
+      if (points.length > 1) {
+        map.fitBounds(
+          points.map((item) => [item.map_point.latitude, item.map_point.longitude]),
+          { padding: [70, 70], maxZoom: 5, animate: true, duration: 0.65 },
+        );
+      } else if (points.length === 1) {
+        map.flyTo([points[0].map_point.latitude, points[0].map_point.longitude], 5, { duration: 0.65 });
+      } else {
+        map.flyTo([22, 12], 2, { duration: 0.65 });
+      }
     } else if (exploration.anchor_mode === "event" && eventPlaces.length) {
       map.fitBounds(
         eventPlaces.map((item) => [item.location.latitude, item.location.longitude]),
@@ -148,7 +162,7 @@ function MapController({ exploration, eventPlaces, onPlaceChange, onZoomChange }
         { duration: 0.55 },
       );
     }
-  }, [eventPlaces, exploration.anchor_mode, exploration.center.latitude, exploration.center.longitude, exploration.map_zoom, map]);
+  }, [environmentalEvents, eventPlaces, exploration.anchor_mode, exploration.center.latitude, exploration.center.longitude, exploration.map_zoom, map]);
   return null;
 }
 
@@ -374,7 +388,7 @@ function sourceLink(dataset) {
 }
 
 const EVENT_TYPE_KEYS = {
-  volcano: "eventVolcano", storm_surge: "eventStormSurge", drought: "eventDrought", heatwave: "eventHeatwave",
+  volcano: "eventVolcano", earthquake: "eventEarthquake", storm_surge: "eventStormSurge", drought: "eventDrought", heatwave: "eventHeatwave",
   frost: "eventFrost", flood: "eventFlood", river_course_change: "eventRiverCourseChange", other: "eventOther",
 };
 const OBSERVATION_METHOD_KEYS = { measurement: "methodMeasurement", reconstruction: "methodReconstruction", documentary: "methodDocumentary" };
@@ -637,6 +651,63 @@ function LivingConditions({ conditions }) {
   );
 }
 
+function EnvironmentalSearchResults({ search, onEventSelect }) {
+  const [typeFilter, setTypeFilter] = useState("all");
+  useEffect(() => setTypeFilter("all"), [search?.selection?.query]);
+  if (!search) return <p className="empty compact">{t("natureSearchLoading")}</p>;
+  const events = typeFilter === "all"
+    ? search.events
+    : search.events.filter((event) => event.event_type === typeFilter);
+  return (
+    <div className="environment-search-results">
+      <section className="global-search-note">
+        <span>{t("globalAllTimes")}</span>
+        <strong>{t("noPlaceTimeFilter")}</strong>
+        {search.time_extent.start_year != null && (
+          <p>{t("storedPeriod", {
+            start: yearLabel(search.time_extent.start_year),
+            end: yearLabel(search.time_extent.end_year),
+          })}</p>
+        )}
+      </section>
+      {search.categories.length > 1 && <div className="category-filters nature-filters">
+        <button className={typeFilter === "all" ? "active" : ""} type="button" onClick={() => setTypeFilter("all")}>{t("categoryAll")} <b>{search.count}</b></button>
+        {search.categories.map((category) => (
+          <button className={typeFilter === category.key ? "active" : ""} key={category.key} type="button" onClick={() => setTypeFilter(category.key)}>
+            {translatedCode(category.key, EVENT_TYPE_KEYS, category.label)} <b>{category.count}</b>
+          </button>
+        ))}
+      </div>}
+      {events.map((event) => (
+        <article className="environment-card global-event" key={event.id}>
+          <div className="environment-meta">
+            <span>{translatedCode(event.event_type, EVENT_TYPE_KEYS, event.event_type_label)}</span>
+            <span>{event.map_point ? t("mapped") : t("locationUncertain")}</span>
+          </div>
+          <h3>{event.name}</h3>
+          {event.description && <p>{event.description}</p>}
+          <EnvironmentalEventFacts event={event} />
+          <div className="environment-values">
+            <strong>
+              {event.time_start_year == null
+                ? t("notSpecified")
+                : `${yearLabel(event.time_start_year)}${event.time_end_year != null && event.time_end_year !== event.time_start_year ? `–${yearLabel(event.time_end_year)}` : ""}`}
+            </strong>
+            <span>{t("confidence")} {Math.round(Number(event.confidence) * 100)} %</span>
+            {event.temporal_uncertainty_years > 0 && <span>± {event.temporal_uncertainty_years} {t(event.temporal_uncertainty_years === 1 ? "year" : "years")}</span>}
+          </div>
+          <div className="global-event-actions">
+            {sourceLink(event.dataset) && <a href={sourceLink(event.dataset)} target="_blank" rel="noreferrer">{event.dataset.provider}: {t("openSource")}</a>}
+            {event.map_point && <button type="button" onClick={() => onEventSelect(event)}>{t("enterNaturalEvent")}</button>}
+          </div>
+        </article>
+      ))}
+      {!events.length && <p className="empty compact">{t("noGlobalNaturalEvents")}</p>}
+      {search.truncated && <p className="scope-note">{t("truncatedNaturalEvents", { count: search.returned_count, total: search.count })}</p>}
+    </div>
+  );
+}
+
 function LegalNotice({ onClose }) {
   const dialogRef = useRef(null);
 
@@ -760,6 +831,7 @@ export default function App() {
   const [timeline, setTimeline] = useState(null);
   const [timeWorld, setTimeWorld] = useState(null);
   const [livingConditions, setLivingConditions] = useState(null);
+  const [environmentalSearch, setEnvironmentalSearch] = useState(null);
   const [livingOpen, setLivingOpen] = useState(false);
   const [eventDossier, setEventDossier] = useState(null);
   const [eventView, setEventView] = useState("overview");
@@ -786,18 +858,20 @@ export default function App() {
     setError("");
     try {
       const current = explorationRef.current;
-      const [nextResults, nextTimeline, nextTimeWorld, nextEventDossier, nextLivingConditions] = await Promise.all([
+      const [nextResults, nextTimeline, nextTimeWorld, nextEventDossier, nextLivingConditions, nextEnvironmentalSearch] = await Promise.all([
         loadExplorationResults(contextId),
         loadExplorationTimeline(contextId),
         loadTimeWorld(contextId),
         current?.focus_entity ? loadEventDossier(contextId) : Promise.resolve(null),
         loadLivingConditions(contextId),
+        current?.query_mode === "environment" ? loadEnvironmentalEvents(contextId) : Promise.resolve(null),
       ]);
       setResults(nextResults);
       setTimeline(nextTimeline);
       setTimeWorld(nextTimeWorld);
       setEventDossier(nextEventDossier);
       setLivingConditions(nextLivingConditions);
+      setEnvironmentalSearch(nextEnvironmentalSearch);
     } catch {
       setError(t("apiUnavailable"));
     } finally {
@@ -922,11 +996,15 @@ export default function App() {
           ? t("placeRecognized", { place: resolved.exploration_context.place_name })
           : resolved.resolved_as === "event"
             ? t("eventRecognized", { event: resolved.event.title, place: resolved.exploration_context.place_name })
-            : t("topicAtPlace", { query }),
+            : resolved.resolved_as === "environment"
+              ? t("environmentRecognized", { query })
+              : t("topicAtPlace", { query }),
       );
       await refreshResults(resolved.exploration_context.id);
-      const job = await startExplorationResearch(explorationRef.current.id);
-      setResearch(job);
+      if (resolved.resolved_as !== "environment") {
+        const job = await startExplorationResearch(explorationRef.current.id);
+        setResearch(job);
+      }
       setResultsOpen(true);
     } catch (requestError) {
       setError(requestError instanceof ApiError && requestError.message
@@ -1003,6 +1081,31 @@ export default function App() {
     setResultsOpen(true);
   }
 
+  function pivotToEnvironmentalEvent(event) {
+    if (!event.map_point) return;
+    const hasTime = event.time_start_year != null;
+    const endYear = event.time_end_year ?? event.time_start_year;
+    const focusYear = hasTime ? Math.floor((event.time_start_year + endYear) / 2) : null;
+    const windowYears = hasTime ? Math.max(focusYear - event.time_start_year, endYear - focusYear) : null;
+    setQueryInput(event.name);
+    setResearch(null);
+    setResolutionMessage(t("naturalEventEntered", { event: event.name }));
+    setError("");
+    setLivingOpen(true);
+    changeContext({
+      place_name: event.name,
+      latitude: event.map_point.latitude,
+      longitude: event.map_point.longitude,
+      map_zoom: 6,
+      ...(hasTime ? { time_focus_year: focusYear, time_window_years: windowYears } : {}),
+      query: event.name,
+      query_mode: "topic",
+      anchor_mode: hasTime ? "time" : "space",
+      environmental_event_types: [],
+    }, 0);
+    setResultsOpen(true);
+  }
+
   useEffect(() => {
     if (!research || ["complete", "partial", "failed"].includes(research.status)) return undefined;
     const timer = window.setInterval(async () => {
@@ -1026,13 +1129,16 @@ export default function App() {
   const isSpaceAnchor = exploration.anchor_mode === "space";
   const isEventAnchor = exploration.anchor_mode === "event";
   const isTimeAnchor = exploration.anchor_mode === "time";
+  const isEnvironmentAnchor = exploration.anchor_mode === "environment";
+  const hasEnvironmentalSearch = (exploration.environmental_event_types?.length ?? 0) > 0;
+  const environmentalEvents = environmentalSearch?.events ?? [];
   const livingCount = (livingConditions?.event_count ?? 0) + (livingConditions?.observation_count ?? 0) + (livingConditions?.relation_count ?? 0) + (livingConditions?.climate_series_count ?? 0);
 
   return (
     <main className="app-shell">
       <MapContainer center={[exploration.center.latitude, exploration.center.longitude]} zoom={Number(exploration.map_zoom)} zoomControl className="map">
         <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        <Circle center={[exploration.center.latitude, exploration.center.longitude]} radius={exploration.radius_km * 1000} pathOptions={{ color: "#75d9b1", fillColor: "#75d9b1", fillOpacity: 0.12 }} />
+        {!isEnvironmentAnchor && <Circle center={[exploration.center.latitude, exploration.center.longitude]} radius={exploration.radius_km * 1000} pathOptions={{ color: "#75d9b1", fillColor: "#75d9b1", fillOpacity: 0.12 }} />}
         {isTimeAnchor && worldEvents.slice(0, 160).map((assertion) => assertion.location && (
           <CircleMarker
             key={assertion.id}
@@ -1051,9 +1157,19 @@ export default function App() {
             eventHandlers={{ click: () => pivotToPlace(assertion) }}
           />
         ))}
+        {isEnvironmentAnchor && environmentalEvents.filter((event) => event.map_point).slice(0, 300).map((event) => (
+          <CircleMarker
+            key={event.id}
+            center={[event.map_point.latitude, event.map_point.longitude]}
+            radius={7}
+            pathOptions={{ color: "#72bce8", fillColor: "#e1b86a", fillOpacity: 0.78, weight: 2 }}
+            eventHandlers={{ click: () => pivotToEnvironmentalEvent(event) }}
+          />
+        ))}
         <MapController
           exploration={exploration}
           eventPlaces={eventPlaces}
+          environmentalEvents={environmentalEvents}
           onPlaceChange={async (patch) => {
             setQueryInput("");
             setResearch(null);
@@ -1109,7 +1225,7 @@ export default function App() {
       </section>
 
       <button className="results-toggle glass" onClick={() => setResultsOpen((open) => !open)} aria-expanded={resultsOpen} aria-controls="results-panel">
-        <span>{livingOpen ? livingCount : isEventAnchor ? eventDossier?.place_count ?? 0 : results?.count ?? 0} {t("discoveries")}</span><span aria-hidden="true">{resultsOpen ? "×" : "↑"}</span>
+        <span>{livingOpen ? livingCount : isEnvironmentAnchor ? environmentalSearch?.count ?? 0 : isEventAnchor ? eventDossier?.place_count ?? 0 : results?.count ?? 0} {t("discoveries")}</span><span aria-hidden="true">{resultsOpen ? "×" : "↑"}</span>
       </button>
 
       <section className={`controls glass ${resultsOpen ? "behind-sheet" : ""}`} aria-label={t("spaceTimeFocus")}>
@@ -1137,18 +1253,23 @@ export default function App() {
           <button className="location-button" type="button" onClick={useCurrentLocation} title={t("useCurrentLocation")}><span aria-hidden="true">◎</span><span>{t("myPlace")}</span></button>
         </div>
         <div className="context-state" aria-live="polite">
-          <span>{exploration.place_name}</span><span>{yearLabel(exploration.time_focus_year)}</span><span>{exploration.radius_km} km</span><small>{saving ? t("saving") : t("saved")}</small>
+          {isEnvironmentAnchor ? <><span>{t("worldwide")}</span><span>{t("allTimes")}</span><span>{t("noFilters")}</span></> : <><span>{exploration.place_name}</span><span>{yearLabel(exploration.time_focus_year)}</span><span>{exploration.radius_km} km</span></>}<small>{saving ? t("saving") : t("saved")}</small>
         </div>
       </section>
 
       <aside id="results-panel" className={`results glass ${resultsOpen ? "open" : ""}`} aria-label={t("discoveriesAria")}>
-        <nav className={`pivot-switch ${exploration.focus_entity ? "has-event" : ""}`} aria-label={t("explorationDirection")}>
+        <nav className={`pivot-switch ${exploration.focus_entity || hasEnvironmentalSearch ? "has-event" : ""}`} aria-label={t("explorationDirection")}>
           <button className={!livingOpen && isSpaceAnchor ? "active" : ""} type="button" onClick={() => { setLivingOpen(false); changeContext({ anchor_mode: "space" }, 0); }}>
             <span>{t("placeToTime")}</span><small>{t("historyHere")}</small>
           </button>
           {exploration.focus_entity && (
             <button className={!livingOpen && isEventAnchor ? "active" : ""} type="button" onClick={() => { setLivingOpen(false); changeContext({ anchor_mode: "event" }, 0); }}>
               <span>{t("eventTab")}</span><small>{exploration.focus_entity.canonical_name}</small>
+            </button>
+          )}
+          {hasEnvironmentalSearch && (
+            <button className={!livingOpen && isEnvironmentAnchor ? "active" : ""} type="button" onClick={() => { setLivingOpen(false); changeContext({ anchor_mode: "environment" }, 0); }}>
+              <span>{t("naturalEvents")}</span><small>{t("worldwideAllTimes")}</small>
             </button>
           )}
           <button className={!livingOpen && isTimeAnchor ? "active" : ""} type="button" onClick={() => { setLivingOpen(false); startTimeWorldResearch({}); }}>
@@ -1160,10 +1281,10 @@ export default function App() {
         </nav>
         <header>
           <div>
-            <small>{livingOpen ? t("livingHeader") : isSpaceAnchor ? (exploration.focus_entity ? t("placeEventLinksHeader") : t("placeHistoryHeader")) : isEventAnchor ? t("eventContextHeader") : t("worldAtTimeHeader")}</small>
-            <h2>{livingOpen ? `${exploration.place_name} · ${yearLabel(exploration.time_focus_year)}` : isSpaceAnchor ? exploration.place_name : isEventAnchor ? exploration.focus_entity?.canonical_name : yearLabel(exploration.time_focus_year)}</h2>
+            <small>{livingOpen ? t("livingHeader") : isEnvironmentAnchor ? t("natureSearchHeader") : isSpaceAnchor ? (exploration.focus_entity ? t("placeEventLinksHeader") : t("placeHistoryHeader")) : isEventAnchor ? t("eventContextHeader") : t("worldAtTimeHeader")}</small>
+            <h2>{livingOpen ? `${exploration.place_name} · ${yearLabel(exploration.time_focus_year)}` : isEnvironmentAnchor ? exploration.query : isSpaceAnchor ? exploration.place_name : isEventAnchor ? exploration.focus_entity?.canonical_name : yearLabel(exploration.time_focus_year)}</h2>
           </div>
-          <span className="coverage">{livingOpen ? `${livingCount} ${t(livingCount === 1 ? "finding" : "findings")}` : `${t("coverage")} ${results?.coverage?.level ? coverageLabel(results.coverage.level) : "–"}`}</span>
+          <span className="coverage">{livingOpen ? `${livingCount} ${t(livingCount === 1 ? "finding" : "findings")}` : isEnvironmentAnchor ? `${environmentalSearch?.count ?? 0} ${t((environmentalSearch?.count ?? 0) === 1 ? "event" : "events")}` : `${t("coverage")} ${results?.coverage?.level ? coverageLabel(results.coverage.level) : "–"}`}</span>
         </header>
         {research && (
           <p className="research-state">
@@ -1178,6 +1299,8 @@ export default function App() {
         <div className="cards">
           {livingOpen ? (
             <LivingConditions conditions={livingConditions} />
+          ) : isEnvironmentAnchor ? (
+            <EnvironmentalSearchResults search={environmentalSearch} onEventSelect={pivotToEnvironmentalEvent} />
           ) : isSpaceAnchor ? (
             <>
               <PlaceTimeline timeline={timeline} onMomentSelect={pivotToTime} />

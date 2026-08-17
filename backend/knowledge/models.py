@@ -644,6 +644,7 @@ class EnvironmentalDataset(models.Model):
 class EnvironmentalEvent(models.Model):
     class Type(models.TextChoices):
         VOLCANO = "volcano", "Vulkanausbruch"
+        EARTHQUAKE = "earthquake", "Erdbeben"
         STORM_SURGE = "storm_surge", "Sturmflut"
         DROUGHT = "drought", "Dürre"
         HEATWAVE = "heatwave", "Hitzewelle"
@@ -880,12 +881,14 @@ class ExplorationContext(models.Model):
         SPACE = "space", "Ort als Ausgangspunkt"
         EVENT = "event", "Ereignis als Ausgangspunkt"
         TIME = "time", "Zeit als Ausgangspunkt"
+        ENVIRONMENT = "environment", "Naturereignis-Kategorie als Ausgangspunkt"
 
     class QueryMode(models.TextChoices):
         AUTO = "auto", "Automatisch erkennen"
         PLACE = "place", "Ort"
         EVENT = "event", "Ereignis"
         TOPIC = "topic", "Thema"
+        ENVIRONMENT = "environment", "Naturereignis-Kategorie"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     place_name = models.CharField(max_length=300, default="Krempe")
@@ -914,6 +917,7 @@ class ExplorationContext(models.Model):
     )
     event_start_year = models.BigIntegerField(null=True, blank=True)
     event_end_year = models.BigIntegerField(null=True, blank=True)
+    environmental_event_types = models.JSONField(default=list, blank=True)
     topics = models.JSONField(default=list, blank=True)
     perspectives = models.JSONField(default=list, blank=True)
     languages = models.JSONField(default=default_research_languages)

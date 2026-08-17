@@ -406,6 +406,7 @@ class EnvironmentalDatasetSerializer(serializers.ModelSerializer):
 class EnvironmentalEventSerializer(serializers.ModelSerializer):
     dataset = EnvironmentalDatasetSerializer(read_only=True)
     geometry = serializers.SerializerMethodField()
+    map_point = serializers.SerializerMethodField()
     name = serializers.SerializerMethodField()
     description = serializers.SerializerMethodField()
     event_type_label = serializers.CharField(source="get_event_type_display", read_only=True)
@@ -423,6 +424,7 @@ class EnvironmentalEventSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "geometry",
+            "map_point",
             "distance_km",
             "spatial_resolution_meters",
             "time_start_year",
@@ -439,6 +441,12 @@ class EnvironmentalEventSerializer(serializers.ModelSerializer):
 
     def get_geometry(self, obj):
         return geometry_geojson(obj.geometry)
+
+    def get_map_point(self, obj):
+        if not obj.geometry:
+            return None
+        point = obj.geometry if obj.geometry.geom_type == "Point" else obj.geometry.centroid
+        return {"latitude": point.y, "longitude": point.x}
 
     def get_name(self, obj):
         labels = obj.metadata.get("labels", {})
@@ -605,6 +613,10 @@ class ExplorationContextSerializer(serializers.ModelSerializer):
     time_window_years = serializers.IntegerField(min_value=0, max_value=1_000_000_000, required=False)
     topics = serializers.ListField(child=serializers.CharField(max_length=120), required=False)
     perspectives = serializers.ListField(child=serializers.CharField(max_length=120), required=False)
+    environmental_event_types = serializers.ListField(
+        child=serializers.ChoiceField(choices=EnvironmentalEvent.Type.choices),
+        required=False,
+    )
     languages = serializers.ListField(child=serializers.CharField(max_length=24), required=False)
     focus_entity = EntitySerializer(read_only=True)
 
@@ -628,6 +640,7 @@ class ExplorationContextSerializer(serializers.ModelSerializer):
             "focus_entity",
             "event_start_year",
             "event_end_year",
+            "environmental_event_types",
             "topics",
             "perspectives",
             "languages",
@@ -683,6 +696,7 @@ class ExplorationContextSerializer(serializers.ModelSerializer):
             instance.focus_entity = None
             instance.event_start_year = None
             instance.event_end_year = None
+            instance.environmental_event_types = []
         instance.version += 1
         instance.save()
         return instance

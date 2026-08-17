@@ -53,6 +53,10 @@ export function loadLivingConditions(id) {
   return request(`/exploration-contexts/${id}/living-conditions/`);
 }
 
+export function loadEnvironmentalEvents(id) {
+  return request(`/exploration-contexts/${id}/environmental-events/`);
+}
+
 export function loadEventDossier(id) {
   return request(`/exploration-contexts/${id}/event-dossier/`);
 }

@@ -6,7 +6,7 @@ from django.contrib.gis.db.models.functions import Distance
 from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
 from django.db import connection, transaction
-from django.db.models import Q
+from django.db.models import Count, Max, Min, Q
 from django.utils import timezone
 import requests
 from rest_framework import generics, status
@@ -16,6 +16,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from .environment import build_climate_series, environment_text
+from .environmental_search import environmental_event_types_for_query
 from .classification import category_summary, time_world_patterns
 from .models import (
     Assertion,
@@ -777,6 +778,70 @@ class ExplorationContextLivingConditionsView(APIView):
         )
 
 
+class ExplorationContextEnvironmentalEventsView(APIView):
+    """Globale, zeitlich unbeschränkte Suche nach Naturereignis-Kategorien."""
+
+    def get(self, request, pk):
+        exploration_context = generics.get_object_or_404(ExplorationContext, pk=pk)
+        event_types = list(exploration_context.environmental_event_types or [])
+        queryset = EnvironmentalEvent.objects.filter(status__in=exploration_statuses(exploration_context))
+        if event_types:
+            queryset = queryset.filter(event_type__in=event_types)
+
+        summary = queryset.aggregate(
+            count=Count("id"),
+            first_year=Min("time_start_year"),
+            last_year=Max("time_end_year"),
+        )
+        category_counts = {
+            item["event_type"]: item["count"]
+            for item in queryset.values("event_type").annotate(count=Count("id"))
+        }
+        limit = integer_parameter(request, "limit", 300, 1, 500)
+        events = list(
+            queryset.select_related("dataset", "dataset__source")
+            .prefetch_related("evidence__source")
+            .order_by("-time_end_year", "-time_start_year", "-confidence", "name")[:limit]
+        )
+        type_labels = dict(EnvironmentalEvent.Type.choices)
+        serializer_context = language_serializer_context(exploration_context)
+
+        return Response(
+            {
+                "exploration_context": ExplorationContextSerializer(exploration_context).data,
+                "selection": {
+                    "query": exploration_context.query,
+                    "scope": "global",
+                    "time_scope": "all",
+                    "place_filter_applied": False,
+                    "time_filter_applied": False,
+                    "event_types": event_types,
+                },
+                "count": summary["count"],
+                "returned_count": len(events),
+                "truncated": summary["count"] > len(events),
+                "georeferenced_count": queryset.exclude(geometry__isnull=True).count(),
+                "time_extent": {
+                    "start_year": summary["first_year"],
+                    "end_year": summary["last_year"],
+                },
+                "categories": [
+                    {
+                        "key": event_type,
+                        "label": type_labels.get(event_type, event_type),
+                        "count": category_counts.get(event_type, 0),
+                    }
+                    for event_type in event_types or category_counts
+                ],
+                "events": EnvironmentalEventSerializer(
+                    events,
+                    many=True,
+                    context=serializer_context,
+                ).data,
+            }
+        )
+
+
 class ExplorationContextEventDossierView(APIView):
     """Das Ereignis als Brücke: Verlauf, Schauplätze und Bezug zum Ausgangsort."""
 
@@ -943,17 +1008,20 @@ class ExplorationContextResolveView(APIView):
         except (TypeError, ValueError):
             return Response({"base_version": ["Ungültige Versionsnummer."]}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            resolved = resolve_wikipedia_entity(
-                query,
-                exploration_context.languages,
-                reference_center=exploration_context.center,
-            )
-        except requests.RequestException:
-            return Response(
-                {"detail": "Die Ortsauflösung über Wikipedia ist derzeit nicht erreichbar."},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
+        environmental_event_types = environmental_event_types_for_query(query)
+        resolved = None
+        if not environmental_event_types:
+            try:
+                resolved = resolve_wikipedia_entity(
+                    query,
+                    exploration_context.languages,
+                    reference_center=exploration_context.center,
+                )
+            except requests.RequestException:
+                return Response(
+                    {"detail": "Die Ortsauflösung über Wikipedia ist derzeit nicht erreichbar."},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
 
         with transaction.atomic():
             locked = ExplorationContext.objects.select_for_update().get(pk=pk)
@@ -967,7 +1035,15 @@ class ExplorationContextResolveView(APIView):
                 )
             locked.query = query
             locked.version += 1
-            if resolved and resolved["kind"] == "place":
+            if environmental_event_types:
+                locked.query_mode = ExplorationContext.QueryMode.ENVIRONMENT
+                locked.anchor_mode = ExplorationContext.AnchorMode.ENVIRONMENT
+                locked.environmental_event_types = environmental_event_types
+                locked.topics = []
+                locked.focus_entity = None
+                locked.event_start_year = None
+                locked.event_end_year = None
+            elif resolved and resolved["kind"] == "place":
                 # Keep the user's familiar wording in the interface. The resolved
                 # Wikipedia title is still returned separately as provenance.
                 locked.place_name = query
@@ -979,6 +1055,7 @@ class ExplorationContextResolveView(APIView):
                 locked.focus_entity = None
                 locked.event_start_year = None
                 locked.event_end_year = None
+                locked.environmental_event_types = []
             elif resolved and resolved["kind"] == "event":
                 event = persist_resolved_event(resolved)
                 locked.query = resolved["title"]
@@ -988,6 +1065,7 @@ class ExplorationContextResolveView(APIView):
                 locked.event_start_year = resolved.get("start_year")
                 locked.event_end_year = resolved.get("end_year") or resolved.get("start_year")
                 locked.topics = [resolved["title"]]
+                locked.environmental_event_types = []
                 if locked.event_start_year is not None:
                     event_end = locked.event_end_year or locked.event_start_year
                     locked.time_focus_year = (locked.event_start_year + event_end) // 2
@@ -1002,9 +1080,10 @@ class ExplorationContextResolveView(APIView):
                 locked.focus_entity = None
                 locked.event_start_year = None
                 locked.event_end_year = None
+                locked.environmental_event_types = []
             locked.save()
 
-        resolved_as = resolved["kind"] if resolved else "topic"
+        resolved_as = "environment" if environmental_event_types else (resolved["kind"] if resolved else "topic")
         return Response(
             {
                 "resolved_as": resolved_as,
@@ -1019,6 +1098,15 @@ class ExplorationContextResolveView(APIView):
                         for key in ("title", "language", "qid", "description", "start_year", "end_year", "page_url", "image_url")
                     }
                     if resolved_as == "event"
+                    else None
+                ),
+                "environment": (
+                    {
+                        "event_types": environmental_event_types,
+                        "scope": "global",
+                        "time_scope": "all",
+                    }
+                    if resolved_as == "environment"
                     else None
                 ),
                 "exploration_context": ExplorationContextSerializer(locked).data,
