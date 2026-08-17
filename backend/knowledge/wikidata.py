@@ -17,6 +17,7 @@ DATE_PREDICATES = {
     "P580": "started",
     "P571": "inception",
 }
+WIKIPEDIA_LANGUAGES = ("de", "en", "fr")
 
 
 def stable_fingerprint(*parts):
@@ -36,13 +37,31 @@ def point_from_wkt(value):
     return Point(float(match.group(1)), float(match.group(2)), srid=4326)
 
 
+def store_wikipedia_sitelinks(entity, qid, sitelinks):
+    """Persist only Wikipedia links that Wikidata confirms actually exist."""
+
+    stored = 0
+    for language in WIKIPEDIA_LANGUAGES:
+        url = (sitelinks.get(language) or "").strip()
+        if not url:
+            continue
+        _, created = ExternalIdentifier.objects.update_or_create(
+            provider=f"wikipedia-{language}",
+            external_id=f"wikidata:{qid}",
+            defaults={"entity": entity, "url": url},
+        )
+        stored += int(created)
+    return stored
+
+
 def time_world_query(start_year, end_year):
     if start_year < 1 or end_year > 9999:
         return None
     start = f"{start_year:04d}-01-01T00:00:00Z"
     after_end = f"{end_year + 1:04d}-01-01T00:00:00Z"
     return f"""
-SELECT DISTINCT ?item ?itemLabel ?itemDescription ?coord ?date ?dateProp ?sitelinks ?instance WHERE {{
+SELECT DISTINCT ?item ?itemLabel ?itemDescription ?coord ?date ?dateProp ?sitelinks ?instance
+  ?deArticle ?enArticle ?frArticle WHERE {{
   VALUES ?dateProp {{ wdt:P585 wdt:P580 wdt:P571 }}
   ?item ?dateProp ?date ; wikibase:sitelinks ?sitelinks .
   FILTER(?date >= \"{start}\"^^xsd:dateTime && ?date < \"{after_end}\"^^xsd:dateTime)
@@ -50,6 +69,9 @@ SELECT DISTINCT ?item ?itemLabel ?itemDescription ?coord ?date ?dateProp ?siteli
   UNION
   {{ ?item wdt:P276/wdt:P625 ?coord. }}
   OPTIONAL {{ ?item wdt:P31 ?instance. }}
+  OPTIONAL {{ ?deArticle schema:about ?item; schema:isPartOf <https://de.wikipedia.org/>. }}
+  OPTIONAL {{ ?enArticle schema:about ?item; schema:isPartOf <https://en.wikipedia.org/>. }}
+  OPTIONAL {{ ?frArticle schema:about ?item; schema:isPartOf <https://fr.wikipedia.org/>. }}
   SERVICE wikibase:label {{ bd:serviceParam wikibase:language \"de,en\". }}
 }}
 ORDER BY DESC(?sitelinks)
@@ -96,6 +118,14 @@ def ingest_wikidata_time_world(research):
                 descriptions={"de": description} if description else {},
             )
             ExternalIdentifier.objects.create(entity=entity, provider="wikidata", external_id=qid, url=item_url)
+        store_wikipedia_sitelinks(
+            entity,
+            qid,
+            {
+                language: binding.get(f"{language}Article", {}).get("value", "")
+                for language in WIKIPEDIA_LANGUAGES
+            },
+        )
 
         source, _ = Source.objects.update_or_create(
             provider="Wikidata",
@@ -160,13 +190,16 @@ def event_places_query(qid):
     if not re.fullmatch(r"Q\d+", qid or ""):
         return None
     return f"""
-SELECT DISTINCT ?item ?itemLabel ?itemDescription ?coord ?date WHERE {{
+SELECT DISTINCT ?item ?itemLabel ?itemDescription ?coord ?date ?deArticle ?enArticle ?frArticle WHERE {{
   ?item wdt:P361 wd:{qid} .
   OPTIONAL {{ ?item wdt:P585 ?date. }}
   OPTIONAL {{ ?item wdt:P580 ?date. }}
   {{ ?item wdt:P625 ?coord. }}
   UNION
   {{ ?item wdt:P276/wdt:P625 ?coord. }}
+  OPTIONAL {{ ?deArticle schema:about ?item; schema:isPartOf <https://de.wikipedia.org/>. }}
+  OPTIONAL {{ ?enArticle schema:about ?item; schema:isPartOf <https://en.wikipedia.org/>. }}
+  OPTIONAL {{ ?frArticle schema:about ?item; schema:isPartOf <https://fr.wikipedia.org/>. }}
   SERVICE wikibase:label {{ bd:serviceParam wikibase:language "de,en". }}
 }}
 LIMIT 160
@@ -220,6 +253,14 @@ def ingest_wikidata_event_places(research, event_entity, qid):
                 external_id=item_qid,
                 url=f"https://www.wikidata.org/wiki/{item_qid}",
             )
+        store_wikipedia_sitelinks(
+            entity,
+            item_qid,
+            {
+                language: binding.get(f"{language}Article", {}).get("value", "")
+                for language in WIKIPEDIA_LANGUAGES
+            },
+        )
         source, _ = Source.objects.update_or_create(
             provider="Wikidata",
             record_id=item_qid,

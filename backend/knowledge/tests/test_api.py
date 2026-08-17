@@ -143,13 +143,19 @@ class ContextAPITests(TestCase):
         self.assertTrue(serialized["integrity"]["complete"])
         self.assertEqual(serialized["evidence"][0]["source"]["license_name"], "CC0 1.0")
 
-    def test_wikidata_finding_links_directly_to_localized_wikipedia_article(self):
+    def test_wikidata_finding_links_directly_to_confirmed_localized_wikipedia_article(self):
         entity = Entity.objects.create(canonical_name="Konklave 1565–1566", kind=Entity.Kind.EVENT)
         ExternalIdentifier.objects.create(
             entity=entity,
             provider="wikidata",
             external_id="Q4541682",
             url="https://www.wikidata.org/wiki/Q4541682",
+        )
+        ExternalIdentifier.objects.create(
+            entity=entity,
+            provider="wikipedia-de",
+            external_id="wikidata:Q4541682",
+            url="https://de.wikipedia.org/wiki/Konklave_1565%E2%80%931566",
         )
         assertion = Assertion.objects.create(
             subject=entity,
@@ -167,10 +173,98 @@ class ContextAPITests(TestCase):
         ).data
 
         self.assertEqual(serialized["content_category"]["key"], "religious_event")
-        self.assertEqual(serialized["preferred_link"]["kind"], "wikipedia_redirect")
+        self.assertEqual(serialized["preferred_link"]["kind"], "wikipedia_article")
         self.assertEqual(
             serialized["preferred_link"]["url"],
-            "https://www.wikidata.org/wiki/Special:GoToLinkedPage/dewiki/Q4541682",
+            "https://de.wikipedia.org/wiki/Konklave_1565%E2%80%931566",
+        )
+
+    def test_wikipedia_link_falls_back_to_existing_english_article(self):
+        entity = Entity.objects.create(canonical_name="Action of 4 June 1565", kind=Entity.Kind.EVENT)
+        ExternalIdentifier.objects.create(
+            entity=entity,
+            provider="wikidata",
+            external_id="Q3436163",
+            url="https://www.wikidata.org/wiki/Q3436163",
+        )
+        ExternalIdentifier.objects.create(
+            entity=entity,
+            provider="wikipedia-en",
+            external_id="wikidata:Q3436163",
+            url="https://en.wikipedia.org/wiki/Action_of_4_June_1565",
+        )
+        assertion = Assertion.objects.create(
+            subject=entity,
+            predicate="point-in-time",
+            value_text="Naval battle of the Northern Seven Years' War",
+            time_start_year=1565,
+            time_end_year=1565,
+            fingerprint="f" * 64,
+        )
+
+        serialized = AssertionSerializer(
+            assertion,
+            context={"preferred_languages": ["de", "en"]},
+        ).data
+
+        self.assertEqual(serialized["preferred_link"]["kind"], "wikipedia_article")
+        self.assertEqual(serialized["preferred_link"]["language"], "en")
+        self.assertEqual(
+            serialized["preferred_link"]["url"],
+            "https://en.wikipedia.org/wiki/Action_of_4_June_1565",
+        )
+
+    def test_wikidata_only_item_does_not_claim_a_nonexistent_wikipedia_article(self):
+        entity = Entity.objects.create(canonical_name="Wikidata only", kind=Entity.Kind.EVENT)
+        ExternalIdentifier.objects.create(
+            entity=entity,
+            provider="wikidata",
+            external_id="Q999999999",
+            url="https://www.wikidata.org/wiki/Q999999999",
+        )
+        assertion = Assertion.objects.create(
+            subject=entity,
+            predicate="point-in-time",
+            value_text="No confirmed Wikipedia article",
+            time_start_year=1565,
+            time_end_year=1565,
+            fingerprint="0" * 64,
+        )
+
+        preferred_link = AssertionSerializer(
+            assertion,
+            context={"preferred_languages": ["de", "en"]},
+        ).data["preferred_link"]
+
+        self.assertEqual(preferred_link["kind"], "source")
+        self.assertEqual(preferred_link["provider"], "Wikidata")
+        self.assertEqual(preferred_link["url"], "https://www.wikidata.org/wiki/Q999999999")
+
+    @patch("knowledge.management.commands.backfill_wikidata_sitelinks.requests.get")
+    def test_wikidata_sitelink_backfill_stores_only_existing_language_articles(self, get):
+        entity = Entity.objects.create(canonical_name="Action of 4 June 1565", kind=Entity.Kind.EVENT)
+        ExternalIdentifier.objects.create(
+            entity=entity,
+            provider="wikidata",
+            external_id="Q3436163",
+            url="https://www.wikidata.org/wiki/Q3436163",
+        )
+        get.return_value.json.return_value = {
+            "entities": {
+                "Q3436163": {
+                    "sitelinks": {
+                        "enwiki": {"title": "Action of 4 June 1565"},
+                    }
+                }
+            }
+        }
+
+        call_command("backfill_wikidata_sitelinks", qids=["Q3436163"])
+
+        self.assertFalse(entity.external_identifiers.filter(provider="wikipedia-de").exists())
+        self.assertEqual(
+            entity.external_identifiers.get(provider="wikipedia-en").url,
+            "https://en.wikipedia.org/wiki/Action_of_4_June_1565",
         )
 
     @patch("knowledge.wikimedia.wikipedia_request")
@@ -1667,6 +1761,7 @@ class ContextAPITests(TestCase):
                         "dateProp": {"value": "http://www.wikidata.org/prop/direct/P571"},
                         "instance": {"value": "http://www.wikidata.org/entity/Q41176"},
                         "sitelinks": {"value": "12"},
+                        "enArticle": {"value": "https://en.wikipedia.org/wiki/Concurrent_building"},
                     }
                 ]
             }
@@ -1684,6 +1779,10 @@ class ContextAPITests(TestCase):
         self.assertEqual(assertion.subject.canonical_name, "Zeitgleiches Bauwerk")
         self.assertEqual(assertion.evidence.first().source.license_name, "CC0 1.0")
         self.assertEqual(assertion.metadata["wikidata_instance_ids"], ["Q41176"])
+        self.assertEqual(
+            assertion.subject.external_identifiers.get(provider="wikipedia-en").url,
+            "https://en.wikipedia.org/wiki/Concurrent_building",
+        )
         self.assertEqual(AssertionSerializer(assertion).data["content_category"]["key"], "building")
 
     @patch("knowledge.wikidata.requests.get")

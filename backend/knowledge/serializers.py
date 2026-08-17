@@ -245,15 +245,11 @@ class AssertionSerializer(serializers.ModelSerializer):
             None,
         )
         if wikidata:
-            language = next(
-                (item for item in preferences if LANGUAGE_CODE_PATTERN.fullmatch(item)),
-                "en",
-            )
             return {
-                "kind": "wikipedia_redirect",
-                "provider": "Wikipedia",
-                "language": language,
-                "url": f"https://www.wikidata.org/wiki/Special:GoToLinkedPage/{language}wiki/{wikidata.external_id}",
+                "kind": "source",
+                "provider": "Wikidata",
+                "language": "mul",
+                "url": wikidata.url or f"https://www.wikidata.org/wiki/{wikidata.external_id}",
             }
 
         evidence = self.ordered_evidence(obj)
