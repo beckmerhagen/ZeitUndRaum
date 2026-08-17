@@ -16,7 +16,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from .environment import build_climate_series, environment_text
-from .environmental_search import environmental_event_types_for_query
+from .environmental_search import environmental_place_radius_km, parse_environmental_query
 from .classification import category_summary, time_world_patterns
 from .models import (
     Assertion,
@@ -779,7 +779,7 @@ class ExplorationContextLivingConditionsView(APIView):
 
 
 class ExplorationContextEnvironmentalEventsView(APIView):
-    """Globale, zeitlich unbeschränkte Suche nach Naturereignis-Kategorien."""
+    """Zeitlich offene Naturereignissuche, global oder um einen benannten Ort."""
 
     def get(self, request, pk):
         exploration_context = generics.get_object_or_404(ExplorationContext, pk=pk)
@@ -787,6 +787,30 @@ class ExplorationContextEnvironmentalEventsView(APIView):
         queryset = EnvironmentalEvent.objects.filter(status__in=exploration_statuses(exploration_context))
         if event_types:
             queryset = queryset.filter(event_type__in=event_types)
+        place_filter_applied = bool(exploration_context.environmental_place_name)
+        place_filter_method = None
+        if place_filter_applied:
+            # Country catalogues often carry an explicit affected-country
+            # assignment. Prefer it over a large centroid radius so a query
+            # such as "Tsunami Thailand" does not become a list of events in
+            # every neighbouring country. Other places and datasets retain
+            # the geometry-based fallback.
+            country_matches = queryset.filter(
+                metadata__country__iexact=exploration_context.environmental_place_name,
+            )
+            if exploration_context.radius_km >= 500 and country_matches.exists():
+                queryset = country_matches.filter(geometry__isnull=False).annotate(
+                    distance=Distance("geometry", exploration_context.center),
+                )
+                place_filter_method = "source_country"
+            else:
+                queryset = queryset.filter(
+                    geometry__distance_lte=(
+                        exploration_context.center,
+                        D(km=exploration_context.radius_km),
+                    )
+                ).annotate(distance=Distance("geometry", exploration_context.center))
+                place_filter_method = "radius"
 
         summary = queryset.aggregate(
             count=Count("id"),
@@ -811,11 +835,24 @@ class ExplorationContextEnvironmentalEventsView(APIView):
                 "exploration_context": ExplorationContextSerializer(exploration_context).data,
                 "selection": {
                     "query": exploration_context.query,
-                    "scope": "global",
+                    "scope": "place" if place_filter_applied else "global",
                     "time_scope": "all",
-                    "place_filter_applied": False,
+                    "place_filter_applied": place_filter_applied,
+                    "place_filter_method": place_filter_method,
                     "time_filter_applied": False,
                     "event_types": event_types,
+                    "reference_place": (
+                        {
+                            "name": exploration_context.environmental_place_name,
+                            "center": {
+                                "latitude": exploration_context.center.y,
+                                "longitude": exploration_context.center.x,
+                            },
+                            "radius_km": exploration_context.radius_km,
+                        }
+                        if place_filter_applied
+                        else None
+                    ),
                 },
                 "count": summary["count"],
                 "returned_count": len(events),
@@ -1008,8 +1045,27 @@ class ExplorationContextResolveView(APIView):
         except (TypeError, ValueError):
             return Response({"base_version": ["Ungültige Versionsnummer."]}, status=status.HTTP_400_BAD_REQUEST)
 
-        environmental_event_types = environmental_event_types_for_query(query)
+        environmental_query = parse_environmental_query(query)
+        environmental_event_types = list(environmental_query["event_types"])
+        environmental_place = None
         resolved = None
+        if environmental_event_types and environmental_query["place_query"]:
+            try:
+                place_candidate = resolve_wikipedia_entity(
+                    environmental_query["place_query"],
+                    exploration_context.languages,
+                    reference_center=exploration_context.center,
+                )
+            except requests.RequestException:
+                return Response(
+                    {"detail": "Die Ortsauflösung über Wikipedia ist derzeit nicht erreichbar."},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+            if place_candidate and place_candidate["kind"] == "place":
+                environmental_place = place_candidate
+            else:
+                environmental_event_types = []
+
         if not environmental_event_types:
             try:
                 resolved = resolve_wikipedia_entity(
@@ -1039,10 +1095,21 @@ class ExplorationContextResolveView(APIView):
                 locked.query_mode = ExplorationContext.QueryMode.ENVIRONMENT
                 locked.anchor_mode = ExplorationContext.AnchorMode.ENVIRONMENT
                 locked.environmental_event_types = environmental_event_types
+                locked.environmental_place_name = ""
                 locked.topics = []
                 locked.focus_entity = None
                 locked.event_start_year = None
                 locked.event_end_year = None
+                if environmental_place:
+                    locked.place_name = environmental_place["title"]
+                    locked.environmental_place_name = environmental_place["title"]
+                    locked.center = Point(
+                        environmental_place["longitude"],
+                        environmental_place["latitude"],
+                        srid=4326,
+                    )
+                    locked.map_zoom = 9
+                    locked.radius_km = environmental_place_radius_km(environmental_place)
             elif resolved and resolved["kind"] == "place":
                 # Keep the user's familiar wording in the interface. The resolved
                 # Wikipedia title is still returned separately as provenance.
@@ -1056,6 +1123,7 @@ class ExplorationContextResolveView(APIView):
                 locked.event_start_year = None
                 locked.event_end_year = None
                 locked.environmental_event_types = []
+                locked.environmental_place_name = ""
             elif resolved and resolved["kind"] == "event":
                 event = persist_resolved_event(resolved)
                 locked.query = resolved["title"]
@@ -1066,6 +1134,7 @@ class ExplorationContextResolveView(APIView):
                 locked.event_end_year = resolved.get("end_year") or resolved.get("start_year")
                 locked.topics = [resolved["title"]]
                 locked.environmental_event_types = []
+                locked.environmental_place_name = ""
                 if locked.event_start_year is not None:
                     event_end = locked.event_end_year or locked.event_start_year
                     locked.time_focus_year = (locked.event_start_year + event_end) // 2
@@ -1081,6 +1150,7 @@ class ExplorationContextResolveView(APIView):
                 locked.event_start_year = None
                 locked.event_end_year = None
                 locked.environmental_event_types = []
+                locked.environmental_place_name = ""
             locked.save()
 
         resolved_as = "environment" if environmental_event_types else (resolved["kind"] if resolved else "topic")
@@ -1103,8 +1173,16 @@ class ExplorationContextResolveView(APIView):
                 "environment": (
                     {
                         "event_types": environmental_event_types,
-                        "scope": "global",
+                        "scope": "place" if environmental_place else "global",
                         "time_scope": "all",
+                        "place": (
+                            {
+                                key: environmental_place[key]
+                                for key in ("title", "language", "latitude", "longitude")
+                            }
+                            if environmental_place
+                            else None
+                        ),
                     }
                     if resolved_as == "environment"
                     else None

@@ -645,6 +645,7 @@ class EnvironmentalEvent(models.Model):
     class Type(models.TextChoices):
         VOLCANO = "volcano", "Vulkanausbruch"
         EARTHQUAKE = "earthquake", "Erdbeben"
+        TSUNAMI = "tsunami", "Tsunami"
         STORM_SURGE = "storm_surge", "Sturmflut"
         DROUGHT = "drought", "Dürre"
         HEATWAVE = "heatwave", "Hitzewelle"
@@ -918,6 +919,7 @@ class ExplorationContext(models.Model):
     event_start_year = models.BigIntegerField(null=True, blank=True)
     event_end_year = models.BigIntegerField(null=True, blank=True)
     environmental_event_types = models.JSONField(default=list, blank=True)
+    environmental_place_name = models.CharField(max_length=300, blank=True)
     topics = models.JSONField(default=list, blank=True)
     perspectives = models.JSONField(default=list, blank=True)
     languages = models.JSONField(default=default_research_languages)

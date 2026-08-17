@@ -641,6 +641,7 @@ class ExplorationContextSerializer(serializers.ModelSerializer):
             "event_start_year",
             "event_end_year",
             "environmental_event_types",
+            "environmental_place_name",
             "topics",
             "perspectives",
             "languages",
@@ -697,6 +698,7 @@ class ExplorationContextSerializer(serializers.ModelSerializer):
             instance.event_start_year = None
             instance.event_end_year = None
             instance.environmental_event_types = []
+            instance.environmental_place_name = ""
         instance.version += 1
         instance.save()
         return instance

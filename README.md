@@ -27,7 +27,7 @@ Der Webserver leitet `/api` intern an Django weiter. Dadurch kann die Web-App au
 - Redis und Celery für fortlaufende Hintergrundrecherche
 - React, Vite und Leaflet für den Webclient
 
-Der `ExplorationContext` ist der gemeinsame Zustand aller Bedienwege. Er speichert Ort, Kartenzoom, Fokusjahr, Zeitfenster, Radius, Thema, Perspektiven, Sprachen und den Umgang mit automatisch gefundenen Aussagen. Der `anchor_mode` bestimmt die Blickrichtung: `space` zeigt die Geschichte des festgehaltenen Ortes, `event` hält ein Ereignis mit seinem eigenen Zeitraum fest, `time` zeigt georeferenzierte Ereignisse des gewählten Zeitfensters über den aktuellen Radius hinaus und `environment` durchsucht Naturereignis-Kategorien ausdrücklich weltweit und über alle gespeicherten Zeiten. Ein Ereignis besitzt einen eigenen `focus_entity`; der räumliche Ausgangsort bleibt daneben erhalten. Dadurch kann man einen Schauplatz betreten und anschließend zum selben Ereignisdossier zurückkehren. Jede Änderung ist partiell. Eine Versionsnummer schützt vor unbemerktem Überschreiben bei parallelen Eingaben.
+Der `ExplorationContext` ist der gemeinsame Zustand aller Bedienwege. Er speichert Ort, Kartenzoom, Fokusjahr, Zeitfenster, Radius, Thema, Perspektiven, Sprachen und den Umgang mit automatisch gefundenen Aussagen. Der `anchor_mode` bestimmt die Blickrichtung: `space` zeigt die Geschichte des festgehaltenen Ortes, `event` hält ein Ereignis mit seinem eigenen Zeitraum fest, `time` zeigt georeferenzierte Ereignisse des gewählten Zeitfensters über den aktuellen Radius hinaus und `environment` durchsucht Naturereignis-Kategorien über alle gespeicherten Zeiten – ohne Ortsangabe weltweit, mit einer kombinierten Eingabe wie `Hamburg Sturmflut` am aufgelösten Ort. Ein Ereignis besitzt einen eigenen `focus_entity`; der räumliche Ausgangsort bleibt daneben erhalten. Dadurch kann man einen Schauplatz betreten und anschließend zum selben Ereignisdossier zurückkehren. Jede Änderung ist partiell. Eine Versionsnummer schützt vor unbemerktem Überschreiben bei parallelen Eingaben.
 
 Die Web-App merkt sich die Kontext-ID lokal und ergänzt sie als `?context=…` in der Adresse. Damit überlebt der Raum-Zeit-Zustand ein Neuladen und kann über denselben Link auf einem anderen Endgerät geöffnet werden.
 
@@ -54,7 +54,7 @@ Wichtige Endpunkte:
 - `GET /api/v1/exploration-contexts/{id}/timeline/` – datierte Ortschronik unabhängig vom aktuellen Fokusjahr
 - `GET /api/v1/exploration-contexts/{id}/time-world/` – georeferenzierte Ereignisse des Zeitfensters von lokal bis global
 - `GET /api/v1/exploration-contexts/{id}/event-dossier/` – Ereignisüberblick, Verlauf, Schauplätze und Bezug zum festgehaltenen Ausgangsort
-- `GET /api/v1/exploration-contexts/{id}/environmental-events/` – Naturereignisse nach Kategorie, weltweit und ohne Orts- oder Zeitfilter
+- `GET /api/v1/exploration-contexts/{id}/environmental-events/` – Naturereignisse nach Kategorie über alle gespeicherten Zeiten, weltweit oder mit Ortsbezug
 - `POST /api/v1/exploration-contexts/{id}/research/` – Recherche direkt aus dem gespeicherten Kontext
 - `GET /api/v1/context/` – Aussagen nach Koordinate, Radius, Jahr und Zeitfenster
 - `POST /api/v1/research/` – eine vertiefte Recherche anlegen

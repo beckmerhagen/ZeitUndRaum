@@ -64,6 +64,7 @@ TEXT_PATTERNS = (
         "natural_event",
         r"\b(flood|hochwasser|überschwemmung|inondation|storm surge|sturmflut|"
         r"volcanic eruption|vulkanausbruch|éruption|earthquake|erdbeben|séisme|"
+        r"tsunami|seebebenwelle|raz de marée|"
         r"drought|dürre|sécheresse|heatwave|hitzewelle|canicule|frost|kältewelle)\b",
     ),
     (

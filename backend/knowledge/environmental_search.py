@@ -33,6 +33,14 @@ ENVIRONMENTAL_EVENT_ALIASES = {
         "tremblement de terre",
         "tremblements de terre",
     },
+    EnvironmentalEvent.Type.TSUNAMI: {
+        "tsunami",
+        "tsunamis",
+        "seebebenwelle",
+        "seebebenwellen",
+        "raz de maree",
+        "raz de maree tsunami",
+    },
     EnvironmentalEvent.Type.STORM_SURGE: {
         "sturmflut",
         "sturmfluten",
@@ -96,6 +104,23 @@ ENVIRONMENTAL_EVENT_ALIASES = {
     },
 }
 
+PLACE_LINK_WORDS = {
+    "a",
+    "am",
+    "at",
+    "bei",
+    "de",
+    "des",
+    "du",
+    "en",
+    "in",
+    "im",
+    "near",
+    "of",
+    "um",
+    "von",
+}
+
 UMBRELLA_ALIASES = {
     "naturereignis",
     "naturereignisse",
@@ -112,13 +137,18 @@ UMBRELLA_ALIASES = {
 }
 
 
-def environmental_event_types_for_query(query):
-    """Return event-type keys only when the complete query denotes categories."""
+def parse_environmental_query(query):
+    """Split a natural-event search into categories and an optional place.
+
+    The parser deliberately does not infer a date. ``Sturmflut Hamburg`` and
+    ``Hamburg Sturmflut`` therefore describe the same open-ended spatial
+    catalogue search, while a bare ``Sturmflut`` keeps the global behaviour.
+    """
     normalized = _normalize(query)
     if not normalized:
-        return []
+        return {"event_types": [], "place_query": ""}
     if normalized in UMBRELLA_ALIASES:
-        return list(ENVIRONMENTAL_EVENT_ALIASES)
+        return {"event_types": list(ENVIRONMENTAL_EVENT_ALIASES), "place_query": ""}
 
     matched = []
     remainder = f" {normalized} "
@@ -138,10 +168,32 @@ def environmental_event_types_for_query(query):
             if event_type not in matched:
                 matched.append(event_type)
 
-    # Accept lists such as "Erdbeben, Vulkanausbruch und Sturmflut", but do
-    # not turn a concrete title like "Erdbeben von Lissabon" into a global
-    # category search.
-    filler = re.sub(r"\b(and|or|und|oder|et|ou)\b", " ", remainder)
-    filler = re.sub(r"[^a-z0-9]+", "", filler)
-    return matched if matched and not filler else []
+    if not matched:
+        return {"event_types": [], "place_query": ""}
 
+    words = [
+        word
+        for word in re.sub(r"\b(and|or|und|oder|et|ou)\b", " ", remainder).split()
+        if word
+    ]
+    while words and words[0] in PLACE_LINK_WORDS:
+        words.pop(0)
+    while words and words[-1] in PLACE_LINK_WORDS:
+        words.pop()
+    return {"event_types": matched, "place_query": " ".join(words)}
+
+
+def environmental_event_types_for_query(query):
+    """Return keys only when the complete query denotes categories."""
+    parsed = parse_environmental_query(query)
+    return parsed["event_types"] if not parsed["place_query"] else []
+
+
+def environmental_place_radius_km(resolved_place):
+    """Choose an initial catalogue radius that matches the place granularity."""
+    description = _normalize(resolved_place.get("description", ""))
+    if re.search(r"\b(country|country in|staat|staat in|land in|pays|etat souverain)\b", description):
+        return 1000
+    if re.search(r"\b(region|district|county|kreis|province|bundesland|departement)\b", description):
+        return 75
+    return 50

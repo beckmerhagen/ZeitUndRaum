@@ -37,6 +37,7 @@ const DEFAULT_CONTEXT = {
   languages: FALLBACK_LANGUAGES,
   include_candidates: true,
   environmental_event_types: [],
+  environmental_place_name: "",
 };
 
 const RESEARCH_STATUS_LABELS = {
@@ -388,7 +389,7 @@ function sourceLink(dataset) {
 }
 
 const EVENT_TYPE_KEYS = {
-  volcano: "eventVolcano", earthquake: "eventEarthquake", storm_surge: "eventStormSurge", drought: "eventDrought", heatwave: "eventHeatwave",
+  volcano: "eventVolcano", earthquake: "eventEarthquake", tsunami: "eventTsunami", storm_surge: "eventStormSurge", drought: "eventDrought", heatwave: "eventHeatwave",
   frost: "eventFrost", flood: "eventFlood", river_course_change: "eventRiverCourseChange", other: "eventOther",
 };
 const OBSERVATION_METHOD_KEYS = { measurement: "methodMeasurement", reconstruction: "methodReconstruction", documentary: "methodDocumentary" };
@@ -492,7 +493,7 @@ function ClimateTable({ table }) {
 
 function formatHistoricalDate(value) {
   if (!value || /^\d{1,4}$/.test(String(value))) return value;
-  const parts = String(value).split("-").map(Number);
+  const parts = String(value).split(/[-/]/).map(Number);
   if (parts.length < 2 || parts.some(Number.isNaN)) return value;
   return new Intl.DateTimeFormat(uiLocale, {
     day: parts.length === 3 ? "numeric" : undefined,
@@ -512,9 +513,11 @@ function EnvironmentalEventFacts({ event }) {
   const facts = [
     dateLabel && [t("eventDate"), dateLabel],
     metadata.flood_source && [t("riverOrSource"), metadata.flood_source],
+    metadata.observation_count != null && [t("documentedObservations"), formatNumber(metadata.observation_count, { maximumFractionDigits: 0 })],
+    metadata.maximum_water_height_m != null && [t("maximumWaterHeight"), `${formatNumber(metadata.maximum_water_height_m, { maximumFractionDigits: 2 })} m`],
     metadata.area_flooded_km2 != null && [t("floodedArea"), `${formatNumber(metadata.area_flooded_km2, { maximumFractionDigits: 0 })} km²`],
     metadata.persons_affected != null && [t("peopleAffected"), formatNumber(metadata.persons_affected, { maximumFractionDigits: 0 })],
-    metadata.fatalities != null && [t("fatalities"), formatNumber(metadata.fatalities, { maximumFractionDigits: 0 })],
+    (metadata.fatalities ?? metadata.fatalities_at_observation_sites) != null && [t("fatalities"), formatNumber(metadata.fatalities ?? metadata.fatalities_at_observation_sites, { maximumFractionDigits: 0 })],
     metadata.losses_2020_euro != null && [t("documentedLoss"), new Intl.NumberFormat(uiLocale, { style: "currency", currency: "EUR", notation: "compact", maximumFractionDigits: 1 }).format(metadata.losses_2020_euro)],
   ].filter(Boolean);
   if (!facts.length && !metadata.cause) return null;
@@ -658,11 +661,16 @@ function EnvironmentalSearchResults({ search, onEventSelect }) {
   const events = typeFilter === "all"
     ? search.events
     : search.events.filter((event) => event.event_type === typeFilter);
+  const referencePlace = search.selection.reference_place;
   return (
     <div className="environment-search-results">
       <section className="global-search-note">
-        <span>{t("globalAllTimes")}</span>
-        <strong>{t("noPlaceTimeFilter")}</strong>
+        <span>{referencePlace ? t("placeAllTimes", { place: referencePlace.name }) : t("globalAllTimes")}</span>
+        <strong>{referencePlace
+          ? search.selection.place_filter_method === "source_country"
+            ? t("countryFilterApplied", { place: referencePlace.name })
+            : t("placeFilterApplied", { radius: referencePlace.radius_km, place: referencePlace.name })
+          : t("noPlaceTimeFilter")}</strong>
         {search.time_extent.start_year != null && (
           <p>{t("storedPeriod", {
             start: yearLabel(search.time_extent.start_year),
@@ -697,7 +705,11 @@ function EnvironmentalSearchResults({ search, onEventSelect }) {
             {event.temporal_uncertainty_years > 0 && <span>± {event.temporal_uncertainty_years} {t(event.temporal_uncertainty_years === 1 ? "year" : "years")}</span>}
           </div>
           <div className="global-event-actions">
-            {sourceLink(event.dataset) && <a href={sourceLink(event.dataset)} target="_blank" rel="noreferrer">{event.dataset.provider}: {t("openSource")}</a>}
+            {(event.metadata?.source_urls?.[0] || sourceLink(event.dataset)) && (
+              <a href={event.metadata?.source_urls?.[0] || sourceLink(event.dataset)} target="_blank" rel="noreferrer">
+                {event.dataset.provider}: {t("openSource")}
+              </a>
+            )}
             {event.map_point && <button type="button" onClick={() => onEventSelect(event)}>{t("enterNaturalEvent")}</button>}
           </div>
         </article>
@@ -997,7 +1009,9 @@ export default function App() {
           : resolved.resolved_as === "event"
             ? t("eventRecognized", { event: resolved.event.title, place: resolved.exploration_context.place_name })
             : resolved.resolved_as === "environment"
-              ? t("environmentRecognized", { query })
+              ? resolved.environment?.place
+                ? t("environmentAtPlaceRecognized", { query, place: resolved.environment.place.title })
+                : t("environmentRecognized", { query })
               : t("topicAtPlace", { query }),
       );
       await refreshResults(resolved.exploration_context.id);
@@ -1081,29 +1095,39 @@ export default function App() {
     setResultsOpen(true);
   }
 
-  function pivotToEnvironmentalEvent(event) {
+  async function pivotToEnvironmentalEvent(event) {
     if (!event.map_point) return;
     const hasTime = event.time_start_year != null;
     const endYear = event.time_end_year ?? event.time_start_year;
     const focusYear = hasTime ? Math.floor((event.time_start_year + endYear) / 2) : null;
     const windowYears = hasTime ? Math.max(focusYear - event.time_start_year, endYear - focusYear) : null;
-    setQueryInput(event.name);
+    setQueryInput("");
     setResearch(null);
     setResolutionMessage(t("naturalEventEntered", { event: event.name }));
     setError("");
-    setLivingOpen(true);
+    setLivingOpen(false);
     changeContext({
       place_name: event.name,
       latitude: event.map_point.latitude,
       longitude: event.map_point.longitude,
       map_zoom: 6,
       ...(hasTime ? { time_focus_year: focusYear, time_window_years: windowYears } : {}),
-      query: event.name,
-      query_mode: "topic",
+      query: "",
+      query_mode: "auto",
       anchor_mode: hasTime ? "time" : "space",
       environmental_event_types: [],
+      environmental_place_name: "",
     }, 0);
     setResultsOpen(true);
+    if (hasTime) {
+      await flushPatch();
+      try {
+        const job = await startExplorationResearch(explorationRef.current.id);
+        setResearch(job);
+      } catch {
+        setError(t("worldResearchFailed"));
+      }
+    }
   }
 
   useEffect(() => {
@@ -1138,7 +1162,7 @@ export default function App() {
     <main className="app-shell">
       <MapContainer center={[exploration.center.latitude, exploration.center.longitude]} zoom={Number(exploration.map_zoom)} zoomControl className="map">
         <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        {!isEnvironmentAnchor && <Circle center={[exploration.center.latitude, exploration.center.longitude]} radius={exploration.radius_km * 1000} pathOptions={{ color: "#75d9b1", fillColor: "#75d9b1", fillOpacity: 0.12 }} />}
+        {(!isEnvironmentAnchor || exploration.environmental_place_name) && <Circle center={[exploration.center.latitude, exploration.center.longitude]} radius={exploration.radius_km * 1000} pathOptions={{ color: "#75d9b1", fillColor: "#75d9b1", fillOpacity: 0.12 }} />}
         {isTimeAnchor && worldEvents.slice(0, 160).map((assertion) => assertion.location && (
           <CircleMarker
             key={assertion.id}
@@ -1253,7 +1277,9 @@ export default function App() {
           <button className="location-button" type="button" onClick={useCurrentLocation} title={t("useCurrentLocation")}><span aria-hidden="true">◎</span><span>{t("myPlace")}</span></button>
         </div>
         <div className="context-state" aria-live="polite">
-          {isEnvironmentAnchor ? <><span>{t("worldwide")}</span><span>{t("allTimes")}</span><span>{t("noFilters")}</span></> : <><span>{exploration.place_name}</span><span>{yearLabel(exploration.time_focus_year)}</span><span>{exploration.radius_km} km</span></>}<small>{saving ? t("saving") : t("saved")}</small>
+          {isEnvironmentAnchor
+            ? <><span>{exploration.environmental_place_name || t("worldwide")}</span><span>{t("allTimes")}</span><span>{exploration.environmental_place_name ? `${exploration.radius_km} km` : t("noFilters")}</span></>
+            : <><span>{exploration.place_name}</span><span>{yearLabel(exploration.time_focus_year)}</span><span>{exploration.radius_km} km</span></>}<small>{saving ? t("saving") : t("saved")}</small>
         </div>
       </section>
 
@@ -1269,7 +1295,7 @@ export default function App() {
           )}
           {hasEnvironmentalSearch && (
             <button className={!livingOpen && isEnvironmentAnchor ? "active" : ""} type="button" onClick={() => { setLivingOpen(false); changeContext({ anchor_mode: "environment" }, 0); }}>
-              <span>{t("naturalEvents")}</span><small>{t("worldwideAllTimes")}</small>
+              <span>{t("naturalEvents")}</span><small>{exploration.environmental_place_name ? t("placeAllTimes", { place: exploration.environmental_place_name }) : t("worldwideAllTimes")}</small>
             </button>
           )}
           <button className={!livingOpen && isTimeAnchor ? "active" : ""} type="button" onClick={() => { setLivingOpen(false); startTimeWorldResearch({}); }}>

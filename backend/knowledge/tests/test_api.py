@@ -13,7 +13,7 @@ from netCDF4 import Dataset
 
 from knowledge.classification import classify_assertion
 from knowledge.environment import nasa_power_series, owda_series
-from knowledge.environmental_search import environmental_event_types_for_query
+from knowledge.environmental_search import environmental_event_types_for_query, parse_environmental_query
 from knowledge.models import (
     Assertion,
     AssertionRelation,
@@ -28,6 +28,7 @@ from knowledge.models import (
     Source,
     WikipediaPortal,
 )
+from knowledge.noaa_tsunami import import_noaa_tsunami_features
 from knowledge.portal_ingest import discover_portals, scan_portal
 from knowledge.serializers import AssertionSerializer
 from knowledge.tasks import audit_imported_assertions, contextual_candidate_years, extract_candidate_years, ingest_nearby_page, ingest_page
@@ -891,6 +892,97 @@ class ContextAPITests(TestCase):
             set(EnvironmentalEvent.Type.values) - {EnvironmentalEvent.Type.OTHER},
         )
 
+    def test_environmental_query_separates_event_type_and_place(self):
+        self.assertEqual(
+            parse_environmental_query("Hamburg Sturmflut"),
+            {"event_types": [EnvironmentalEvent.Type.STORM_SURGE], "place_query": "hamburg"},
+        )
+        self.assertEqual(
+            parse_environmental_query("Sturmflut Dithmarschen"),
+            {"event_types": [EnvironmentalEvent.Type.STORM_SURGE], "place_query": "dithmarschen"},
+        )
+        self.assertEqual(
+            parse_environmental_query("Tsunami Thailand"),
+            {"event_types": [EnvironmentalEvent.Type.TSUNAMI], "place_query": "thailand"},
+        )
+
+    @patch("knowledge.views.resolve_wikipedia_entity")
+    def test_natural_event_and_place_query_sets_spatial_filter_without_time_filter(self, resolve_entity):
+        resolve_entity.return_value = {
+            "kind": "place",
+            "title": "Hamburg",
+            "language": "de",
+            "latitude": 53.5503,
+            "longitude": 9.9920,
+            "page": {},
+        }
+        context = ExplorationContext.objects.create(
+            place_name="Agra",
+            center=Point(78.0081, 27.1767, srid=4326),
+            time_focus_year=1565,
+            time_window_years=0,
+        )
+
+        response = self.client.post(
+            f"/api/v1/exploration-contexts/{context.id}/resolve/",
+            {"query": "Hamburg Sturmflut", "base_version": context.version},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["resolved_as"], "environment")
+        self.assertEqual(response.data["environment"]["event_types"], ["storm_surge"])
+        self.assertEqual(response.data["environment"]["scope"], "place")
+        result = response.data["exploration_context"]
+        self.assertEqual(result["environmental_place_name"], "Hamburg")
+        self.assertEqual(result["place_name"], "Hamburg")
+        self.assertEqual(result["time_focus_year"], 1565)
+        self.assertEqual(result["radius_km"], 50)
+        self.assertAlmostEqual(result["center"]["latitude"], 53.5503)
+        resolve_entity.assert_called_once()
+
+    def test_noaa_tsunami_observations_are_grouped_by_event_and_affected_country(self):
+        features = [
+            {
+                "geometry": {"type": "Point", "coordinates": [98.42, 7.83]},
+                "properties": {
+                    "ID": 9070,
+                    "TSEVENT_ID": 2439,
+                    "YEAR": 2004,
+                    "DATE_STRING": "2004/12/26",
+                    "LOCATION_NAME": "PHUKET",
+                    "COUNTRY": "THAILAND",
+                    "RUNUP_HT": 1.11,
+                    "TYPE_MEASUREMENT": "Tide-gauge measurement",
+                    "TSEVENT_URL": "https://example.org/tsunami/2439",
+                },
+            },
+            {
+                "geometry": {"type": "Point", "coordinates": [98.34, 7.82]},
+                "properties": {
+                    "ID": 9072,
+                    "TSEVENT_ID": 2439,
+                    "YEAR": 2004,
+                    "DATE_STRING": "2004/12/26",
+                    "LOCATION_NAME": "CHALONG",
+                    "COUNTRY": "THAILAND",
+                    "RUNUP_HT": 4.0,
+                    "TYPE_MEASUREMENT": "Post-tsunami survey",
+                    "TSEVENT_URL": "https://example.org/tsunami/2439",
+                },
+            },
+        ]
+
+        result = import_noaa_tsunami_features(features)
+
+        self.assertEqual(result["created"], 1)
+        event = EnvironmentalEvent.objects.get(event_type=EnvironmentalEvent.Type.TSUNAMI)
+        self.assertEqual(event.time_start_year, 2004)
+        self.assertEqual(event.metadata["country"], "THAILAND")
+        self.assertEqual(event.metadata["observation_count"], 2)
+        self.assertEqual(event.metadata["maximum_water_height_m"], 4.0)
+        self.assertEqual(event.geometry.geom_type, "MultiPoint")
+
     @patch("knowledge.views.resolve_wikipedia_entity")
     def test_natural_event_category_is_global_and_has_no_time_filter(self, resolve_entity):
         context = ExplorationContext.objects.create(
@@ -957,6 +1049,87 @@ class ContextAPITests(TestCase):
         self.assertFalse(response.data["selection"]["time_filter_applied"])
         self.assertEqual(response.data["time_extent"], {"start_year": 2024, "end_year": 2024})
         self.assertEqual(response.data["exploration_context"]["query_mode"], "environment")
+
+    def test_environmental_event_search_filters_by_resolved_place_but_not_time(self):
+        near = EnvironmentalEvent.objects.create(
+            event_type=EnvironmentalEvent.Type.STORM_SURGE,
+            name="Hamburger Sturmflut",
+            geometry=Point(9.9920, 53.5503, srid=4326),
+            time_start_year=1962,
+            time_end_year=1962,
+            status=Assertion.Status.VERIFIED,
+            confidence=Decimal("0.9"),
+        )
+        EnvironmentalEvent.objects.create(
+            event_type=EnvironmentalEvent.Type.STORM_SURGE,
+            name="Entfernte Sturmflut",
+            geometry=Point(4.9, 52.4, srid=4326),
+            time_start_year=1953,
+            time_end_year=1953,
+            status=Assertion.Status.VERIFIED,
+            confidence=Decimal("0.9"),
+        )
+        context = ExplorationContext.objects.create(
+            place_name="Hamburg",
+            environmental_place_name="Hamburg",
+            center=Point(9.9920, 53.5503, srid=4326),
+            radius_km=25,
+            time_focus_year=1565,
+            environmental_event_types=[EnvironmentalEvent.Type.STORM_SURGE],
+            query="Hamburg Sturmflut",
+            query_mode=ExplorationContext.QueryMode.ENVIRONMENT,
+            anchor_mode=ExplorationContext.AnchorMode.ENVIRONMENT,
+        )
+
+        response = self.client.get(f"/api/v1/exploration-contexts/{context.id}/environmental-events/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["events"][0]["id"], str(near.id))
+        self.assertEqual(response.data["selection"]["scope"], "place")
+        self.assertTrue(response.data["selection"]["place_filter_applied"])
+        self.assertEqual(response.data["selection"]["place_filter_method"], "radius")
+        self.assertFalse(response.data["selection"]["time_filter_applied"])
+        self.assertEqual(response.data["selection"]["reference_place"]["name"], "Hamburg")
+
+    def test_country_environmental_search_prefers_explicit_source_assignment(self):
+        thailand = EnvironmentalEvent.objects.create(
+            event_type=EnvironmentalEvent.Type.TSUNAMI,
+            name="Tsunami-Beobachtungen · Thailand (2004)",
+            geometry=Point(98.4, 7.8, srid=4326),
+            time_start_year=2004,
+            time_end_year=2004,
+            status=Assertion.Status.VERIFIED,
+            confidence=Decimal("0.95"),
+            metadata={"country": "THAILAND"},
+        )
+        EnvironmentalEvent.objects.create(
+            event_type=EnvironmentalEvent.Type.TSUNAMI,
+            name="Tsunami-Beobachtungen · Myanmar (2004)",
+            geometry=Point(98.1, 13.0, srid=4326),
+            time_start_year=2004,
+            time_end_year=2004,
+            status=Assertion.Status.VERIFIED,
+            confidence=Decimal("0.95"),
+            metadata={"country": "MYANMAR"},
+        )
+        context = ExplorationContext.objects.create(
+            place_name="Thailand",
+            environmental_place_name="Thailand",
+            center=Point(101.03, 15.35, srid=4326),
+            radius_km=1000,
+            environmental_event_types=[EnvironmentalEvent.Type.TSUNAMI],
+            query="Tsunami Thailand",
+            query_mode=ExplorationContext.QueryMode.ENVIRONMENT,
+            anchor_mode=ExplorationContext.AnchorMode.ENVIRONMENT,
+        )
+
+        response = self.client.get(f"/api/v1/exploration-contexts/{context.id}/environmental-events/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["events"][0]["id"], str(thailand.id))
+        self.assertEqual(response.data["selection"]["place_filter_method"], "source_country")
 
     @patch("knowledge.views.resolve_wikipedia_entity")
     def test_event_query_keeps_reference_place_and_sets_event_period(self, resolve_entity):
