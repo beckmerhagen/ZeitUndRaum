@@ -1,10 +1,8 @@
 import requests
-from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from knowledge.models import ExternalIdentifier
-from knowledge.wikidata import WIKIPEDIA_LANGUAGES, store_wikipedia_sitelinks
-from knowledge.wikimedia import wikipedia_page_url
+from knowledge.wikidata import fetch_wikipedia_sitelinks, store_wikipedia_sitelinks
 
 
 class Command(BaseCommand):
@@ -30,35 +28,17 @@ class Command(BaseCommand):
         processed = 0
         for offset in range(0, len(by_qid), batch_size):
             qids = list(by_qid)[offset : offset + batch_size]
-            response = requests.get(
-                "https://www.wikidata.org/w/api.php",
-                params={
-                    "action": "wbgetentities",
-                    "ids": "|".join(qids),
-                    "props": "sitelinks",
-                    "sitefilter": "|".join(f"{language}wiki" for language in WIKIPEDIA_LANGUAGES),
-                    "format": "json",
-                },
-                headers={"User-Agent": settings.WIKIMEDIA_USER_AGENT, "Accept": "application/json"},
-                timeout=45,
-            )
             try:
-                response.raise_for_status()
+                entities = fetch_wikipedia_sitelinks(qids)
             except requests.RequestException as error:
                 raise CommandError(f"Wikidata-Sitelinks konnten nicht geladen werden: {error}") from error
 
-            entities = response.json().get("entities", {})
             for qid in qids:
                 item = by_qid[qid]
-                sitelinks = entities.get(qid, {}).get("sitelinks", {})
                 stored += store_wikipedia_sitelinks(
                     item.entity,
                     qid,
-                    {
-                        language: wikipedia_page_url(language, sitelinks[f"{language}wiki"]["title"])
-                        for language in WIKIPEDIA_LANGUAGES
-                        if sitelinks.get(f"{language}wiki", {}).get("title")
-                    },
+                    entities.get(qid, {}),
                 )
                 processed += 1
 

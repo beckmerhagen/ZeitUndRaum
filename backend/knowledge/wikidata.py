@@ -10,6 +10,7 @@ from django.contrib.gis.geos import Point
 from django.utils import timezone
 
 from .models import Assertion, Entity, Evidence, ExternalIdentifier, Source
+from .wikimedia import wikipedia_page_url
 
 WKT_POINT_PATTERN = re.compile(r"^Point\(([-+\d.eE]+)\s+([-+\d.eE]+)\)$")
 DATE_PREDICATES = {
@@ -18,6 +19,42 @@ DATE_PREDICATES = {
     "P571": "inception",
 }
 WIKIPEDIA_LANGUAGES = ("de", "en", "fr")
+
+
+def fetch_wikipedia_sitelinks(qids, languages=WIKIPEDIA_LANGUAGES):
+    """Resolve confirmed Wikipedia articles through Wikidata's official API."""
+
+    normalized_qids = [qid for qid in dict.fromkeys(qids) if re.fullmatch(r"Q\d+", qid or "")]
+    normalized_languages = [
+        language
+        for language in dict.fromkeys(str(item).casefold() for item in languages)
+        if re.fullmatch(r"[a-z]{2,3}", language)
+    ]
+    if not normalized_qids or not normalized_languages:
+        return {}
+    response = requests.get(
+        "https://www.wikidata.org/w/api.php",
+        params={
+            "action": "wbgetentities",
+            "ids": "|".join(normalized_qids[:50]),
+            "props": "sitelinks",
+            "sitefilter": "|".join(f"{language}wiki" for language in normalized_languages),
+            "format": "json",
+        },
+        headers={"User-Agent": settings.WIKIMEDIA_USER_AGENT, "Accept": "application/json"},
+        timeout=45,
+    )
+    response.raise_for_status()
+    entities = response.json().get("entities", {})
+    return {
+        qid: {
+            language: wikipedia_page_url(language, sitelinks[f"{language}wiki"]["title"])
+            for language in normalized_languages
+            if sitelinks.get(f"{language}wiki", {}).get("title")
+        }
+        for qid in normalized_qids[:50]
+        for sitelinks in [entities.get(qid, {}).get("sitelinks", {})]
+    }
 
 
 def stable_fingerprint(*parts):

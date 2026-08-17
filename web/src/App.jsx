@@ -196,8 +196,10 @@ function AssertionCard({ assertion, onPlaceSelect }) {
         </div>
         {preferredLink && (
           <a href={preferredLink.url} target="_blank" rel="noreferrer">
-            {preferredLink.kind.startsWith("wikipedia")
-              ? t("openWikipedia", { language: preferredLink.language })
+            {preferredLink.kind === "wikipedia_resolver"
+              ? t("openWikipediaBestLanguage")
+              : preferredLink.kind.startsWith("wikipedia")
+                ? t("openWikipedia", { language: preferredLink.language })
               : `${preferredLink.provider}: ${t("openOriginal")}`}
           </a>
         )}

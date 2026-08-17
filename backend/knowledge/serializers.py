@@ -1,7 +1,9 @@
 import re
 import json
+from urllib.parse import urlencode
 
 from django.contrib.gis.geos import Point
+from django.urls import reverse
 from rest_framework import serializers
 
 from .models import (
@@ -246,10 +248,14 @@ class AssertionSerializer(serializers.ModelSerializer):
         )
         if wikidata:
             return {
-                "kind": "source",
-                "provider": "Wikidata",
-                "language": "mul",
-                "url": wikidata.url or f"https://www.wikidata.org/wiki/{wikidata.external_id}",
+                "kind": "wikipedia_resolver",
+                "provider": "Wikipedia",
+                "language": preferences[0] if preferences else "en",
+                "url": (
+                    reverse("wikidata-wikipedia-redirect", kwargs={"qid": wikidata.external_id})
+                    + "?"
+                    + urlencode({"languages": ",".join(preferences)})
+                ),
             }
 
         evidence = self.ordered_evidence(obj)

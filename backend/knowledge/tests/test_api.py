@@ -236,11 +236,53 @@ class ContextAPITests(TestCase):
             context={"preferred_languages": ["de", "en"]},
         ).data["preferred_link"]
 
-        self.assertEqual(preferred_link["kind"], "source")
-        self.assertEqual(preferred_link["provider"], "Wikidata")
-        self.assertEqual(preferred_link["url"], "https://www.wikidata.org/wiki/Q999999999")
+        self.assertEqual(preferred_link["kind"], "wikipedia_resolver")
+        self.assertEqual(preferred_link["provider"], "Wikipedia")
+        self.assertEqual(
+            preferred_link["url"],
+            "/api/v1/wikipedia/Q999999999/?languages=de%2Cen",
+        )
 
-    @patch("knowledge.management.commands.backfill_wikidata_sitelinks.requests.get")
+    @patch("knowledge.views.fetch_wikipedia_sitelinks")
+    def test_wikipedia_resolver_fetches_localized_article_and_persists_it(self, fetch_sitelinks):
+        entity = Entity.objects.create(canonical_name="Norwegischer Kreuzzug", kind=Entity.Kind.EVENT)
+        ExternalIdentifier.objects.create(
+            entity=entity,
+            provider="wikidata",
+            external_id="Q847851",
+            url="https://www.wikidata.org/wiki/Q847851",
+        )
+        fetch_sitelinks.return_value = {
+            "Q847851": {
+                "de": "https://de.wikipedia.org/wiki/Norwegischer_Kreuzzug",
+                "en": "https://en.wikipedia.org/wiki/Norwegian_Crusade",
+                "fr": "https://fr.wikipedia.org/wiki/Croisade_norv%C3%A9gienne",
+            }
+        }
+
+        response = self.client.get(
+            "/api/v1/wikipedia/Q847851/",
+            {"languages": "de,en"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "https://de.wikipedia.org/wiki/Norwegischer_Kreuzzug")
+        fetch_sitelinks.assert_called_once_with(["Q847851"], ["de", "en", "fr"])
+        self.assertEqual(
+            entity.external_identifiers.get(provider="wikipedia-de").url,
+            "https://de.wikipedia.org/wiki/Norwegischer_Kreuzzug",
+        )
+
+        fetch_sitelinks.reset_mock()
+        cached_response = self.client.get(
+            "/api/v1/wikipedia/Q847851/",
+            {"languages": "de,en"},
+        )
+        self.assertEqual(cached_response.status_code, 302)
+        self.assertEqual(cached_response.url, "https://de.wikipedia.org/wiki/Norwegischer_Kreuzzug")
+        fetch_sitelinks.assert_not_called()
+
+    @patch("knowledge.wikidata.requests.get")
     def test_wikidata_sitelink_backfill_stores_only_existing_language_articles(self, get):
         entity = Entity.objects.create(canonical_name="Action of 4 June 1565", kind=Entity.Kind.EVENT)
         ExternalIdentifier.objects.create(

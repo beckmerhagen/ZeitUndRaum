@@ -18,6 +18,7 @@ from .views import (
     ResearchListCreateView,
     SourceListView,
     WikipediaPortalListView,
+    WikidataWikipediaRedirectView,
     health,
 )
 
@@ -48,4 +49,9 @@ urlpatterns = [
     path("entities/", EntityListView.as_view(), name="entity-list"),
     path("sources/", SourceListView.as_view(), name="source-list"),
     path("wikipedia-portals/", WikipediaPortalListView.as_view(), name="wikipedia-portal-list"),
+    path(
+        "wikipedia/<str:qid>/",
+        WikidataWikipediaRedirectView.as_view(),
+        name="wikidata-wikipedia-redirect",
+    ),
 ]

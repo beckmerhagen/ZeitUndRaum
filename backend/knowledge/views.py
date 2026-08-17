@@ -7,9 +7,10 @@ from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
 from django.db import connection, transaction
 from django.db.models import Count, Max, Min, Q
+from django.shortcuts import redirect
 from django.utils import timezone
 import requests
-from rest_framework import generics, status
+from rest_framework import generics, serializers, status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -45,9 +46,11 @@ from .serializers import (
     ResearchRequestSerializer,
     SourceSerializer,
     WikipediaPortalSerializer,
+    validate_language_preferences,
 )
 from .tasks import run_research_request
 from .wikimedia import resolve_wikipedia_entity
+from .wikidata import WIKIPEDIA_LANGUAGES, fetch_wikipedia_sitelinks, store_wikipedia_sitelinks
 
 
 def integer_parameter(request, name, default, minimum, maximum):
@@ -62,6 +65,45 @@ def float_parameter(request, name, default, minimum, maximum):
         return max(minimum, min(maximum, float(request.query_params.get(name, default))))
     except (TypeError, ValueError):
         return default
+
+
+class WikidataWikipediaRedirectView(APIView):
+    """Redirect a Wikidata item to the best confirmed Wikipedia article."""
+
+    def get(self, request, qid):
+        requested = request.query_params.get("languages", "")
+        raw_languages = requested.split(",") if requested else [
+            part.split(";", 1)[0] for part in request.headers.get("Accept-Language", "").split(",") if part
+        ]
+        try:
+            preferences = validate_language_preferences(raw_languages or ["en"])
+        except serializers.ValidationError as error:
+            return Response({"detail": error.detail}, status=status.HTTP_400_BAD_REQUEST)
+        languages = list(dict.fromkeys([*preferences, *WIKIPEDIA_LANGUAGES]))[:4]
+        identifier = generics.get_object_or_404(
+            ExternalIdentifier.objects.select_related("entity"),
+            provider="wikidata",
+            external_id=qid,
+        )
+        stored = {
+            item.provider.casefold().removeprefix("wikipedia-"): item.url
+            for item in identifier.entity.external_identifiers.filter(provider__startswith="wikipedia-")
+            if item.url
+        }
+        for language in languages:
+            if stored.get(language):
+                return redirect(stored[language])
+
+        wikidata_url = identifier.url or f"https://www.wikidata.org/wiki/{qid}"
+        try:
+            resolved = fetch_wikipedia_sitelinks([qid], languages).get(qid, {})
+        except requests.RequestException:
+            return redirect(wikidata_url)
+        store_wikipedia_sitelinks(identifier.entity, qid, resolved)
+        for language in languages:
+            if resolved.get(language):
+                return redirect(resolved[language])
+        return redirect(wikidata_url)
 
 
 EVENT_GENERIC_WORDS = {
