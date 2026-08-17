@@ -11,3 +11,11 @@ Die Produktionsinstallation ist von WIS getrennt:
 
 `server-bootstrap.sh` legt ausschließlich Explore-Ressourcen an. Die vorhandenen
 WIS-Verzeichnisse, Dienste, Datenbank und Nginx-Konfiguration werden nicht verändert.
+
+Nach einem geprüften Programm-Deployment werden die versionierten, idempotenten
+Umweltkataloge ausschließlich in die Explore-Datenbank geladen:
+
+```sh
+sudo -u deploy /srv/explore/venv/bin/python /srv/explore/app/backend/manage.py import_noaa_earthquakes
+sudo -u deploy /srv/explore/venv/bin/python /srv/explore/app/backend/manage.py import_noaa_tsunamis
+```

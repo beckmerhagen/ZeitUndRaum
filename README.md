@@ -77,6 +77,14 @@ Portal-Katalog und kontrollierten Hintergrundscan starten:
 docker compose exec api python manage.py discover_wikipedia_portals --languages de en fr --queue-scan --article-limit 50
 ```
 
+Die globalen NOAA/NCEI-Kataloge für bedeutende Erdbeben und dokumentierte
+Tsunami-Auswirkungen werden idempotent importiert:
+
+```sh
+docker compose exec api python manage.py import_noaa_earthquakes
+docker compose exec api python manage.py import_noaa_tsunamis
+```
+
 ## Funktionen
 
 - nichtlineare Zeitachse von der frühen Erde bis heute

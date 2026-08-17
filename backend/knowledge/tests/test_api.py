@@ -28,6 +28,7 @@ from knowledge.models import (
     Source,
     WikipediaPortal,
 )
+from knowledge.noaa_earthquake import import_noaa_earthquake_features
 from knowledge.noaa_tsunami import import_noaa_tsunami_features
 from knowledge.portal_ingest import discover_portals, scan_portal
 from knowledge.serializers import AssertionSerializer
@@ -982,6 +983,39 @@ class ContextAPITests(TestCase):
         self.assertEqual(event.metadata["observation_count"], 2)
         self.assertEqual(event.metadata["maximum_water_height_m"], 4.0)
         self.assertEqual(event.geometry.geom_type, "MultiPoint")
+
+    def test_noaa_significant_earthquake_is_imported_with_historical_context(self):
+        features = [
+            {
+                "geometry": {"type": "Point", "coordinates": [85.32, 27.71]},
+                "properties": {
+                    "ID": 1234,
+                    "YEAR": 1934,
+                    "MONTH": 1,
+                    "DAY": 15,
+                    "LOCATION_NAME": "NEPAL: KATHMANDU",
+                    "COUNTRY": "NEPAL",
+                    "REGION": "Central Asia",
+                    "EQ_MAGNITUDE": 8.0,
+                    "EQ_DEPTH": 15,
+                    "DEATHS_TOTAL": 10700,
+                    "DAMAGE_TOTAL_DESCRIPTION": "Extreme",
+                    "URL": "https://example.org/earthquake/1234",
+                },
+            }
+        ]
+
+        result = import_noaa_earthquake_features(features)
+
+        self.assertEqual(result["created"], 1)
+        event = EnvironmentalEvent.objects.get(event_type=EnvironmentalEvent.Type.EARTHQUAKE)
+        self.assertEqual(event.time_start_year, 1934)
+        self.assertEqual(event.time_precision, Assertion.Precision.DAY)
+        self.assertEqual(event.metadata["country"], "NEPAL")
+        self.assertEqual(event.metadata["magnitude"], 8.0)
+        self.assertEqual(event.metadata["depth_km"], 15.0)
+        self.assertEqual(event.metadata["fatalities"], 10700)
+        self.assertEqual(event.metadata["dates"]["start"], "1934-01-15")
 
     @patch("knowledge.views.resolve_wikipedia_entity")
     def test_natural_event_category_is_global_and_has_no_time_filter(self, resolve_entity):
