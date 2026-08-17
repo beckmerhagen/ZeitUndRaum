@@ -24,6 +24,7 @@ from knowledge.models import (
     ExplorationContext,
     ExternalIdentifier,
     PortalArticle,
+    PortalScanRun,
     ResearchRequest,
     Source,
     WikipediaPortal,
@@ -31,6 +32,7 @@ from knowledge.models import (
 from knowledge.noaa_earthquake import import_noaa_earthquake_features
 from knowledge.noaa_tsunami import import_noaa_tsunami_features
 from knowledge.portal_ingest import discover_portals, scan_portal
+from knowledge.portal_recovery import recover_interrupted_portal_scans
 from knowledge.serializers import AssertionSerializer
 from knowledge.tasks import audit_imported_assertions, contextual_candidate_years, extract_candidate_years, ingest_nearby_page, ingest_page
 from knowledge.wikidata import ingest_wikidata_event_places, ingest_wikidata_time_world
@@ -331,6 +333,28 @@ class ContextAPITests(TestCase):
         self.assertEqual(portal.metadata["continuation"], {"plcontinue": "next"})
         self.assertEqual(portal.metadata["discovery"], "wikipedia-curated-portal-directory-v1")
         self.assertEqual(portal.scan_status, WikipediaPortal.ScanStatus.PARTIAL)
+
+    def test_interrupted_portal_scan_becomes_resumable_and_audited(self):
+        portal = WikipediaPortal.objects.create(
+            language="de",
+            title="Portal:Test",
+            url="https://de.wikipedia.org/wiki/Portal:Test",
+            scan_status=WikipediaPortal.ScanStatus.RUNNING,
+        )
+        run = PortalScanRun.objects.create(portal=portal)
+
+        result = recover_interrupted_portal_scans(languages=["de"])
+
+        portal.refresh_from_db()
+        run.refresh_from_db()
+        self.assertEqual(result["recovered_portals"], 1)
+        self.assertEqual(result["recovered_runs"], 1)
+        self.assertEqual(result["resumable_portals"], 1)
+        self.assertEqual(portal.scan_status, WikipediaPortal.ScanStatus.PARTIAL)
+        self.assertIn("automatisch", portal.last_error)
+        self.assertEqual(run.status, WikipediaPortal.ScanStatus.PARTIAL)
+        self.assertIsNotNone(run.completed_at)
+        self.assertEqual(run.error_message, portal.last_error)
 
     def test_assertion_relations_keep_coincidence_separate_from_causality(self):
         source_assertion = Assertion.objects.get(fingerprint="1" * 64)

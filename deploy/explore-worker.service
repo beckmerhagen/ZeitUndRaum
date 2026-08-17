@@ -10,6 +10,9 @@ Group=www-data
 WorkingDirectory=/srv/explore/app/backend
 EnvironmentFile=/srv/explore/app/backend/.env
 Environment="PATH=/srv/explore/venv/bin"
+# Ein abgebrochener Portal-Kataloglauf wird vor jedem Workerstart auditierbar
+# auf "teilweise" zurückgesetzt und als neuer Auftrag in Redis vorgemerkt.
+ExecStartPre=/srv/explore/venv/bin/python /srv/explore/app/backend/manage.py resume_wikipedia_portal_scans --languages de en fr --batch-size 1 --article-limit 50
 ExecStart=/srv/explore/venv/bin/celery -A config worker \
           --loglevel=INFO \
           --concurrency=1 \

@@ -678,14 +678,25 @@ def run_research_request(self, request_id):
     return {"request_id": request_id, "discovered_assertions": discovered, "errors": errors}
 
 
-@shared_task(bind=True, autoretry_for=(requests.RequestException,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+@shared_task(
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    autoretry_for=(requests.RequestException,),
+    retry_backoff=True,
+    retry_kwargs={"max_retries": 3},
+)
 def scan_wikipedia_portal_batch(self, languages=None, batch_size=1, article_limit=100):
     """Arbeitet den Portal-Katalog höflich in kleinen, fortsetzbaren Portionen ab."""
 
     from .models import WikipediaPortal
     from .portal_ingest import scan_portal
+    from .portal_recovery import recover_interrupted_portal_scans
 
     languages = languages or ["de", "en", "fr"]
+    recovery = None
+    if (self.request.delivery_info or {}).get("redelivered"):
+        recovery = recover_interrupted_portal_scans(languages=languages)
     results = []
     for _ in range(max(1, min(int(batch_size), 3))):
         with transaction.atomic():
@@ -739,4 +750,4 @@ def scan_wikipedia_portal_batch(self, languages=None, batch_size=1, article_limi
             },
             countdown=20,
         )
-    return {"results": results, "remaining": remaining}
+    return {"results": results, "remaining": remaining, "recovery": recovery}
