@@ -1,0 +1,12 @@
+.DS_Store
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+backend/staticfiles/
+web/node_modules/
+web/dist/
+backups/
+data/environment/*.nc
+*.xcuserstate
+xcuserdata/

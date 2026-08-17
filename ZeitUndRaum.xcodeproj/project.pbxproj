@@ -1,0 +1,355 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 71;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* ZeitUndRaumApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* ZeitUndRaumApp.swift */; };
+		A10000000000000000000002 /* JourneyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* JourneyModels.swift */; };
+		A10000000000000000000003 /* HistoricalAtlas.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* HistoricalAtlas.swift */; };
+		A10000000000000000000004 /* LocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* LocationService.swift */; };
+		A10000000000000000000005 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* RootView.swift */; };
+		A10000000000000000000006 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* Components.swift */; };
+		A10000000000000000000007 /* TimePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* TimePickerSheet.swift */; };
+		A10000000000000000000008 /* LocationPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* LocationPickerSheet.swift */; };
+		A10000000000000000000009 /* JourneyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* JourneyView.swift */; };
+		A1000000000000000000000A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000A /* Assets.xcassets */; };
+		A1000000000000000000000B /* EvidenceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* EvidenceModels.swift */; };
+		A1000000000000000000000C /* LiveResearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* LiveResearchService.swift */; };
+		A1000000000000000000000D /* HistoricalMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* HistoricalMapView.swift */; };
+		A1000000000000000000000E /* ResearchSourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* ResearchSourcesView.swift */; };
+		A1000000000000000000000F /* TopicModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* TopicModels.swift */; };
+		A10000000000000000000010 /* SpeechInputService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* SpeechInputService.swift */; };
+		A10000000000000000000011 /* TopicResearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* TopicResearchService.swift */; };
+		A10000000000000000000012 /* TopicExplorerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* TopicExplorerView.swift */; };
+		A10000000000000000000013 /* PlaceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* PlaceModels.swift */; };
+		A10000000000000000000014 /* PlaceResearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* PlaceResearchService.swift */; };
+		A10000000000000000000015 /* PlaceDossierView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* PlaceDossierView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		B10000000000000000000000 /* ZeitUndRaum.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = ZeitUndRaum.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000001 /* ZeitUndRaumApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZeitUndRaumApp.swift; sourceTree = "<group>"; };
+		B10000000000000000000002 /* JourneyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyModels.swift; sourceTree = "<group>"; };
+		B10000000000000000000003 /* HistoricalAtlas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoricalAtlas.swift; sourceTree = "<group>"; };
+		B10000000000000000000004 /* LocationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationService.swift; sourceTree = "<group>"; };
+		B10000000000000000000005 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		B10000000000000000000006 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		B10000000000000000000007 /* TimePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimePickerSheet.swift; sourceTree = "<group>"; };
+		B10000000000000000000008 /* LocationPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationPickerSheet.swift; sourceTree = "<group>"; };
+		B10000000000000000000009 /* JourneyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyView.swift; sourceTree = "<group>"; };
+		B1000000000000000000000A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B1000000000000000000000B /* EvidenceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceModels.swift; sourceTree = "<group>"; };
+		B1000000000000000000000C /* LiveResearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveResearchService.swift; sourceTree = "<group>"; };
+		B1000000000000000000000D /* HistoricalMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoricalMapView.swift; sourceTree = "<group>"; };
+		B1000000000000000000000E /* ResearchSourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResearchSourcesView.swift; sourceTree = "<group>"; };
+		B1000000000000000000000F /* TopicModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicModels.swift; sourceTree = "<group>"; };
+		B10000000000000000000010 /* SpeechInputService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechInputService.swift; sourceTree = "<group>"; };
+		B10000000000000000000011 /* TopicResearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicResearchService.swift; sourceTree = "<group>"; };
+		B10000000000000000000012 /* TopicExplorerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicExplorerView.swift; sourceTree = "<group>"; };
+		B10000000000000000000013 /* PlaceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceModels.swift; sourceTree = "<group>"; };
+		B10000000000000000000014 /* PlaceResearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceResearchService.swift; sourceTree = "<group>"; };
+		B10000000000000000000015 /* PlaceDossierView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceDossierView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C10000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		D10000000000000000000000 = {
+			isa = PBXGroup;
+			children = (
+				D10000000000000000000001 /* ZeitUndRaum */,
+				D10000000000000000000006 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D10000000000000000000001 /* ZeitUndRaum */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000001 /* ZeitUndRaumApp.swift */,
+				D10000000000000000000002 /* Models */,
+				D10000000000000000000003 /* Services */,
+				D10000000000000000000004 /* Views */,
+				D10000000000000000000005 /* Resources */,
+			);
+			path = ZeitUndRaum;
+			sourceTree = "<group>";
+		};
+		D10000000000000000000002 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000002 /* JourneyModels.swift */,
+				B1000000000000000000000B /* EvidenceModels.swift */,
+				B1000000000000000000000F /* TopicModels.swift */,
+				B10000000000000000000013 /* PlaceModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		D10000000000000000000003 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000003 /* HistoricalAtlas.swift */,
+				B10000000000000000000004 /* LocationService.swift */,
+				B1000000000000000000000C /* LiveResearchService.swift */,
+				B10000000000000000000010 /* SpeechInputService.swift */,
+				B10000000000000000000011 /* TopicResearchService.swift */,
+				B10000000000000000000014 /* PlaceResearchService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		D10000000000000000000004 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000005 /* RootView.swift */,
+				B10000000000000000000006 /* Components.swift */,
+				B10000000000000000000007 /* TimePickerSheet.swift */,
+				B10000000000000000000008 /* LocationPickerSheet.swift */,
+				B10000000000000000000009 /* JourneyView.swift */,
+				B1000000000000000000000D /* HistoricalMapView.swift */,
+				B1000000000000000000000E /* ResearchSourcesView.swift */,
+				B10000000000000000000012 /* TopicExplorerView.swift */,
+				B10000000000000000000015 /* PlaceDossierView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		D10000000000000000000005 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				B1000000000000000000000A /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		D10000000000000000000006 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000000 /* ZeitUndRaum.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E10000000000000000000001 /* ZeitUndRaum */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F10000000000000000000001 /* Build configuration list for PBXNativeTarget "ZeitUndRaum" */;
+			buildPhases = (
+				G10000000000000000000001 /* Sources */,
+				C10000000000000000000001 /* Frameworks */,
+				H10000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ZeitUndRaum;
+			productName = ZeitUndRaum;
+			productReference = B10000000000000000000000 /* ZeitUndRaum.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E00000000000000000000000 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					E10000000000000000000001 = {
+						CreatedOnToolsVersion = 26.6;
+					};
+				};
+			};
+			buildConfigurationList = F00000000000000000000000 /* Build configuration list for PBXProject "ZeitUndRaum" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = de;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				de,
+				Base,
+			);
+			mainGroup = D10000000000000000000000;
+			productRefGroup = D10000000000000000000006 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E10000000000000000000001 /* ZeitUndRaum */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		H10000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000000000000000000000A /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		G10000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* ZeitUndRaumApp.swift in Sources */,
+				A10000000000000000000002 /* JourneyModels.swift in Sources */,
+				A10000000000000000000003 /* HistoricalAtlas.swift in Sources */,
+				A10000000000000000000004 /* LocationService.swift in Sources */,
+				A10000000000000000000005 /* RootView.swift in Sources */,
+				A10000000000000000000006 /* Components.swift in Sources */,
+				A10000000000000000000007 /* TimePickerSheet.swift in Sources */,
+				A10000000000000000000008 /* LocationPickerSheet.swift in Sources */,
+				A10000000000000000000009 /* JourneyView.swift in Sources */,
+				A1000000000000000000000B /* EvidenceModels.swift in Sources */,
+				A1000000000000000000000C /* LiveResearchService.swift in Sources */,
+				A1000000000000000000000D /* HistoricalMapView.swift in Sources */,
+				A1000000000000000000000E /* ResearchSourcesView.swift in Sources */,
+				A1000000000000000000000F /* TopicModels.swift in Sources */,
+				A10000000000000000000010 /* SpeechInputService.swift in Sources */,
+				A10000000000000000000011 /* TopicResearchService.swift in Sources */,
+				A10000000000000000000012 /* TopicExplorerView.swift in Sources */,
+				A10000000000000000000013 /* PlaceModels.swift in Sources */,
+				A10000000000000000000014 /* PlaceResearchService.swift in Sources */,
+				A10000000000000000000015 /* PlaceDossierView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		I00000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		I00000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		I10000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = MN5959YXX6;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Zeit & Raum";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Deine Stimme wird nur verwendet, um ein Suchthema zu erfassen.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Dein Standort wird verwendet, um die Geschichte dieses Ortes zu erkunden.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Die App verbindet sich während der Entwicklung mit dem lokalen Zeit-und-Raum-Wissensserver.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Gesprochene Stichworte werden in Text umgewandelt, um historische Themen zu suchen.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = de.juergen.zeitundraum;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		I10000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MN5959YXX6;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Zeit & Raum";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Deine Stimme wird nur verwendet, um ein Suchthema zu erfassen.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Dein Standort wird verwendet, um die Geschichte dieses Ortes zu erkunden.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Die App verbindet sich während der Entwicklung mit dem lokalen Zeit-und-Raum-Wissensserver.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Gesprochene Stichworte werden in Text umgewandelt, um historische Themen zu suchen.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = de.juergen.zeitundraum;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F00000000000000000000000 /* Build configuration list for PBXProject "ZeitUndRaum" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				I00000000000000000000001 /* Debug */,
+				I00000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F10000000000000000000001 /* Build configuration list for PBXNativeTarget "ZeitUndRaum" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				I10000000000000000000001 /* Debug */,
+				I10000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E00000000000000000000000 /* Project object */;
+}

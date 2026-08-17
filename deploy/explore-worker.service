@@ -1,0 +1,30 @@
+[Unit]
+Description=Celery research worker for Tripanion Explore
+After=network.target postgresql.service redis-server.service explore.service
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=deploy
+Group=www-data
+WorkingDirectory=/srv/explore/app/backend
+EnvironmentFile=/srv/explore/app/backend/.env
+Environment="PATH=/srv/explore/venv/bin"
+ExecStart=/srv/explore/venv/bin/celery -A config worker \
+          --loglevel=INFO \
+          --concurrency=1 \
+          --max-tasks-per-child=50 \
+          --max-memory-per-child=600000
+Restart=always
+RestartSec=10
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/srv/explore
+MemoryMax=1500M
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target

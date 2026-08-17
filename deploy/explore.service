@@ -1,0 +1,31 @@
+[Unit]
+Description=Gunicorn for Tripanion Explore
+After=network.target postgresql.service redis-server.service
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=deploy
+Group=www-data
+UMask=0007
+WorkingDirectory=/srv/explore/app/backend
+EnvironmentFile=/srv/explore/app/backend/.env
+RuntimeDirectory=explore
+RuntimeDirectoryMode=0770
+ExecStart=/srv/explore/venv/bin/gunicorn \
+          --workers 2 \
+          --timeout 90 \
+          --bind unix:/run/explore/explore.sock \
+          config.wsgi:application
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/srv/explore /run/explore
+MemoryMax=1200M
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target

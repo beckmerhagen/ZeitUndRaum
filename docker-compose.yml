@@ -1,0 +1,84 @@
+services:
+  db:
+    image: imresamu/postgis:17-3.5-bookworm@sha256:35fe7dceda62bfe7d2965b0ba78d915ff9f901b5e0466d633ecc58421b5b5210
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-zeitundraum}
+      POSTGRES_USER: ${POSTGRES_USER:-zeitundraum}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zeitundraum}
+    volumes:
+      - postgres_data_arm64:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zeitundraum} -d ${POSTGRES_DB:-zeitundraum}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-zeitundraum}:${POSTGRES_PASSWORD:-zeitundraum}@db:5432/${POSTGRES_DB:-zeitundraum}
+      REDIS_URL: redis://redis:6379/0
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-development-key}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-true}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,api}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5174}
+      WIKIMEDIA_USER_AGENT: ${WIKIMEDIA_USER_AGENT:-ZeitUndRaum/0.1 local-development}
+      OWDA_NETCDF_PATH: /data/environment/owda.nc
+    volumes:
+      - ./data/environment:/data/environment:ro
+    command: >-
+      sh -c "python manage.py migrate &&
+             python manage.py seed_demo &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 90"
+    ports:
+      - "8010:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: ./backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-zeitundraum}:${POSTGRES_PASSWORD:-zeitundraum}@db:5432/${POSTGRES_DB:-zeitundraum}
+      REDIS_URL: redis://redis:6379/0
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-development-key}
+      WIKIMEDIA_USER_AGENT: ${WIKIMEDIA_USER_AGENT:-ZeitUndRaum/0.1 local-development}
+    command: celery -A config worker --loglevel=INFO --concurrency=2
+    depends_on:
+      api:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  web:
+    build: ./web
+    ports:
+      - "5174:5173"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data_arm64:
+  postgres_data_amd64_backup:
+    external: true
+    name: zeitundraum_postgres_data
+  redis_data:

@@ -1,0 +1,45 @@
+from django.urls import path
+
+from .views import (
+    ContextView,
+    AssertionRelationListView,
+    EntityListView,
+    ExplorationContextDetailView,
+    ExplorationContextEventDossierView,
+    ExplorationContextListCreateView,
+    ExplorationContextLivingConditionsView,
+    ExplorationContextResearchView,
+    ExplorationContextResolveView,
+    ExplorationContextResultsView,
+    ExplorationContextTimelineView,
+    ExplorationContextTimeWorldView,
+    ResearchDetailView,
+    ResearchListCreateView,
+    SourceListView,
+    WikipediaPortalListView,
+    health,
+)
+
+urlpatterns = [
+    path("health/", health, name="health"),
+    path("context/", ContextView.as_view(), name="context"),
+    path("assertion-relations/", AssertionRelationListView.as_view(), name="assertion-relation-list"),
+    path("exploration-contexts/", ExplorationContextListCreateView.as_view(), name="exploration-context-list"),
+    path("exploration-contexts/<uuid:pk>/", ExplorationContextDetailView.as_view(), name="exploration-context-detail"),
+    path("exploration-contexts/<uuid:pk>/results/", ExplorationContextResultsView.as_view(), name="exploration-context-results"),
+    path("exploration-contexts/<uuid:pk>/timeline/", ExplorationContextTimelineView.as_view(), name="exploration-context-timeline"),
+    path("exploration-contexts/<uuid:pk>/time-world/", ExplorationContextTimeWorldView.as_view(), name="exploration-context-time-world"),
+    path(
+        "exploration-contexts/<uuid:pk>/living-conditions/",
+        ExplorationContextLivingConditionsView.as_view(),
+        name="exploration-context-living-conditions",
+    ),
+    path("exploration-contexts/<uuid:pk>/event-dossier/", ExplorationContextEventDossierView.as_view(), name="exploration-context-event-dossier"),
+    path("exploration-contexts/<uuid:pk>/resolve/", ExplorationContextResolveView.as_view(), name="exploration-context-resolve"),
+    path("exploration-contexts/<uuid:pk>/research/", ExplorationContextResearchView.as_view(), name="exploration-context-research"),
+    path("research/", ResearchListCreateView.as_view(), name="research-list"),
+    path("research/<uuid:pk>/", ResearchDetailView.as_view(), name="research-detail"),
+    path("entities/", EntityListView.as_view(), name="entity-list"),
+    path("sources/", SourceListView.as_view(), name="source-list"),
+    path("wikipedia-portals/", WikipediaPortalListView.as_view(), name="wikipedia-portal-list"),
+]
