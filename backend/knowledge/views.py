@@ -30,6 +30,8 @@ from .models import (
     Evidence,
     ExplorationContext,
     ExternalIdentifier,
+    HistoricalProcess,
+    ProcessAssertionRelation,
     ResearchRequest,
     Source,
     WikipediaPortal,
@@ -43,6 +45,8 @@ from .serializers import (
     EnvironmentalObservationSerializer,
     EnvironmentalRelationSerializer,
     ExplorationContextSerializer,
+    HistoricalProcessSerializer,
+    ProcessAssertionRelationSerializer,
     ResearchRequestSerializer,
     SourceSerializer,
     WikipediaPortalSerializer,
@@ -382,6 +386,171 @@ class AssertionRelationListView(APIView):
                     relations,
                     many=True,
                     context={"preferred_languages": list(dict.fromkeys(languages))},
+                ).data,
+            }
+        )
+
+
+def process_queryset():
+    return (
+        HistoricalProcess.objects.select_related("entity")
+        .prefetch_related(
+            "entity__external_identifiers",
+            "defining_assertions__subject__external_identifiers",
+            "assertion_relations__process__entity__external_identifiers",
+            "assertion_relations__assertion__subject__external_identifiers",
+            "assertion_relations__evidence__source",
+        )
+        .distinct()
+    )
+
+
+class HistoricalProcessListView(APIView):
+    """Längerfristige Prozesse mit explizitem Raum, Zeitraum und Evidenzprofil."""
+
+    def get(self, request):
+        queryset = process_queryset().exclude(status=Assertion.Status.REJECTED)
+        query = request.query_params.get("q", "").strip()
+        if query:
+            queryset = queryset.filter(
+                Q(entity__canonical_name__icontains=query) | Q(summary__icontains=query)
+            )
+        process_type = request.query_params.get("process_type")
+        if process_type:
+            queryset = queryset.filter(process_type=process_type)
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        year = request.query_params.get("year")
+        if year:
+            try:
+                selected_year = int(year)
+            except ValueError:
+                return Response(
+                    {"detail": "year muss eine ganze Jahreszahl sein."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            queryset = queryset.filter(
+                Q(time_start_year__isnull=True) | Q(time_start_year__lte=selected_year)
+            ).filter(Q(time_end_year__isnull=True) | Q(time_end_year__gte=selected_year))
+        limit = integer_parameter(request, "limit", 100, 1, 500)
+        processes = list(queryset.order_by("-confidence", "entity__canonical_name")[:limit])
+        languages = [request.query_params.get("lang", "en"), "en", "de", "fr"]
+        return Response(
+            {
+                "count": len(processes),
+                "processes": HistoricalProcessSerializer(
+                    processes,
+                    many=True,
+                    context={"preferred_languages": list(dict.fromkeys(languages))},
+                ).data,
+            }
+        )
+
+
+class HistoricalProcessDetailView(APIView):
+    def get(self, request, pk):
+        process = generics.get_object_or_404(process_queryset(), pk=pk)
+        languages = [request.query_params.get("lang", "en"), "en", "de", "fr"]
+        return Response(
+            HistoricalProcessSerializer(
+                process,
+                context={"preferred_languages": list(dict.fromkeys(languages))},
+            ).data
+        )
+
+
+class ProcessAssertionRelationListView(APIView):
+    """Prozessbezüge; die Evidenzstufe ist ein verpflichtender Teil jeder Antwort."""
+
+    def get(self, request):
+        queryset = ProcessAssertionRelation.objects.exclude(status=Assertion.Status.REJECTED)
+        process_id = request.query_params.get("process")
+        if process_id:
+            queryset = queryset.filter(process_id=process_id)
+        assertion_id = request.query_params.get("assertion")
+        if assertion_id:
+            queryset = queryset.filter(assertion_id=assertion_id)
+        relation_type = request.query_params.get("relation_type")
+        if relation_type:
+            queryset = queryset.filter(relation_type=relation_type)
+        evidence_level = request.query_params.get("evidence_level")
+        if evidence_level:
+            queryset = queryset.filter(evidence_level=evidence_level)
+        relations = list(
+            queryset.select_related("process__entity", "assertion__subject")
+            .prefetch_related(
+                "process__entity__external_identifiers",
+                "assertion__subject__external_identifiers",
+                "evidence__source",
+            )
+            .order_by("-confidence", "evidence_level")[:500]
+        )
+        languages = [request.query_params.get("lang", "en"), "en", "de", "fr"]
+        return Response(
+            {
+                "count": len(relations),
+                "relations": ProcessAssertionRelationSerializer(
+                    relations,
+                    many=True,
+                    context={"preferred_languages": list(dict.fromkeys(languages))},
+                ).data,
+            }
+        )
+
+
+class ExplorationContextProcessesView(APIView):
+    """Prozesse, die im gewählten Raum und Zeitraum durch Aussagen sichtbar werden."""
+
+    def get(self, request, pk):
+        exploration_context = generics.get_object_or_404(ExplorationContext, pk=pk)
+        statuses = exploration_statuses(exploration_context)
+        local_assertions = (
+            Assertion.objects.filter(status__in=statuses)
+            .filter(Q(time_start_year__isnull=True) | Q(time_start_year__lte=exploration_context.time_end_year))
+            .filter(Q(time_end_year__isnull=True) | Q(time_end_year__gte=exploration_context.time_start_year))
+            .filter(exploration_place_scope_filter(exploration_context))
+            .values("pk")
+        )
+        queryset = (
+            process_queryset()
+            .filter(status__in=statuses)
+            .filter(Q(time_start_year__isnull=True) | Q(time_start_year__lte=exploration_context.time_end_year))
+            .filter(Q(time_end_year__isnull=True) | Q(time_end_year__gte=exploration_context.time_start_year))
+            .filter(
+                Q(defining_assertions__in=local_assertions)
+                | Q(assertion_relations__assertion__in=local_assertions)
+                | Q(spatial_scope=Assertion.SpatialScope.GLOBAL)
+                | Q(
+                    spatial_extent__dwithin=(
+                        exploration_context.center,
+                        D(km=exploration_context.radius_km),
+                    )
+                )
+            )
+            .distinct()
+        )
+        processes = list(queryset.order_by("-confidence", "entity__canonical_name")[:100])
+        level_counts = {
+            level: ProcessAssertionRelation.objects.filter(
+                process__in=processes,
+                evidence_level=level,
+                status__in=statuses,
+            ).count()
+            for level, _label in AssertionRelation.EvidenceLevel.choices
+        }
+        return Response(
+            {
+                "exploration_context": ExplorationContextSerializer(exploration_context).data,
+                "count": len(processes),
+                "evidence_levels": level_counts,
+                "interpretation_note": (
+                    "Gleichzeitigkeit und automatische Ähnlichkeit sind Hinweise, aber kein Beleg für einen Zusammenhang."
+                ),
+                "processes": HistoricalProcessSerializer(
+                    processes,
+                    many=True,
+                    context=language_serializer_context(exploration_context),
                 ).data,
             }
         )

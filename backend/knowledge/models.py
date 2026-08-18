@@ -26,6 +26,7 @@ class Entity(models.Model):
         POLITY = "polity", "Herrschaftsgebiet"
         EVENT = "event", "Ereignis"
         MOVEMENT = "movement", "Bewegung"
+        PROCESS = "process", "Historischer Prozess"
         NATURAL_FEATURE = "natural_feature", "Naturraum"
         OTHER = "other", "Sonstiges"
 
@@ -477,6 +478,282 @@ class AssertionRelation(models.Model):
 
     def __str__(self):
         return f"{self.source_assertion} → {self.get_relation_type_display()} → {self.target_assertion}"
+
+
+class HistoricalProcess(models.Model):
+    """Ein längerfristiger Prozess, der durch einzelne Aussagen belegt und räumlich-zeitlich begrenzt wird."""
+
+    class Type(models.TextChoices):
+        INTELLECTUAL = "intellectual", "Ideen- und Wissensgeschichte"
+        POLITICAL = "political", "Politischer Prozess"
+        SOCIAL = "social", "Gesellschaftlicher Prozess"
+        ECONOMIC = "economic", "Wirtschaftlicher Prozess"
+        RELIGIOUS = "religious", "Religiöser Prozess"
+        CULTURAL = "cultural", "Kultureller Prozess"
+        ENVIRONMENTAL = "environmental", "Umwelt- und Klimaprozess"
+        TECHNOLOGICAL = "technological", "Technischer Prozess"
+        DEMOGRAPHIC = "demographic", "Demografischer Prozess"
+        OTHER = "other", "Sonstiger Prozess"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    entity = models.OneToOneField(Entity, related_name="historical_process", on_delete=models.CASCADE)
+    process_type = models.CharField(max_length=24, choices=Type.choices)
+    summary = models.TextField()
+    time_start_year = models.BigIntegerField(null=True, blank=True)
+    time_end_year = models.BigIntegerField(null=True, blank=True)
+    time_precision = models.CharField(
+        max_length=16,
+        choices=Assertion.Precision.choices,
+        default=Assertion.Precision.UNKNOWN,
+    )
+    temporal_uncertainty_years = models.PositiveBigIntegerField(default=0)
+    temporal_scope = models.CharField(
+        max_length=16,
+        choices=Assertion.TemporalScope.choices,
+        default=Assertion.TemporalScope.UNKNOWN,
+    )
+    spatial_extent = models.GeometryField(srid=4326, geography=True, null=True, blank=True)
+    spatial_scope = models.CharField(
+        max_length=16,
+        choices=Assertion.SpatialScope.choices,
+        default=Assertion.SpatialScope.UNKNOWN,
+    )
+    spatial_precision_meters = models.PositiveBigIntegerField(null=True, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Assertion.Status.choices,
+        default=Assertion.Status.CANDIDATE,
+    )
+    confidence = models.DecimalField(
+        max_digits=4,
+        decimal_places=3,
+        default=0.5,
+        validators=[MinValueValidator(0), MaxValueValidator(1)],
+    )
+    confidence_reason = models.TextField(default=default_confidence_reason)
+    defining_assertions = models.ManyToManyField(
+        Assertion,
+        related_name="defined_processes",
+        blank=True,
+        help_text="Aussagen, die Existenz, Zeitraum oder Raumbezug des Prozesses stützen.",
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["process_type", "status"]),
+            models.Index(fields=["time_start_year", "time_end_year"]),
+            models.Index(fields=["spatial_scope", "confidence"]),
+        ]
+        constraints = [
+            models.CheckConstraint(condition=~models.Q(summary=""), name="historical_process_summary_required"),
+            models.CheckConstraint(
+                condition=~models.Q(confidence_reason=""),
+                name="historical_process_confidence_reason_required",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(time_start_year__isnull=True)
+                    | models.Q(time_end_year__isnull=True)
+                    | models.Q(time_start_year__lte=models.F("time_end_year"))
+                ),
+                name="historical_process_time_order",
+            ),
+        ]
+
+    def clean(self):
+        errors = {}
+        if self.entity_id and self.entity.kind != Entity.Kind.PROCESS:
+            errors["entity"] = "Die zugeordnete Entität muss als historischer Prozess klassifiziert sein."
+        if self.temporal_scope == Assertion.TemporalScope.BOUNDED and (
+            self.time_start_year is None or self.time_end_year is None
+        ):
+            errors["temporal_scope"] = "Ein begrenzter Prozess benötigt Anfangs- und Endjahr."
+        if (
+            self.time_start_year is not None
+            and self.time_end_year is not None
+            and self.time_start_year > self.time_end_year
+        ):
+            errors["time_end_year"] = "Das Ende darf nicht vor dem Anfang liegen."
+        if self.spatial_scope == Assertion.SpatialScope.POINT and self.spatial_extent is None:
+            errors["spatial_scope"] = "Ein punktgenauer Prozess benötigt eine Geometrie."
+        if not self.summary.strip():
+            errors["summary"] = "Ein Prozess benötigt eine kurze Beschreibung."
+        if not self.confidence_reason.strip():
+            errors["confidence_reason"] = "Der Vertrauenswert benötigt eine kurze Begründung."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if self.temporal_scope == Assertion.TemporalScope.UNKNOWN:
+            if self.time_start_year is not None and self.time_end_year is not None:
+                self.temporal_scope = Assertion.TemporalScope.BOUNDED
+            elif self.time_start_year is not None:
+                self.temporal_scope = Assertion.TemporalScope.OPEN_END
+            elif self.time_end_year is not None:
+                self.temporal_scope = Assertion.TemporalScope.OPEN_START
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    @property
+    def temporal_extent(self):
+        return {
+            "scope": self.temporal_scope,
+            "start_year": self.time_start_year,
+            "end_year": self.time_end_year,
+            "precision": self.time_precision,
+            "uncertainty_years": self.temporal_uncertainty_years,
+        }
+
+    def integrity_issues(self):
+        issues = []
+        if self.pk and not self.defining_assertions.exists():
+            issues.append("missing_defining_assertion")
+        if self.pk and not self.defining_assertions.filter(evidence__isnull=False).exists():
+            issues.append("missing_source_evidence")
+        if not self.confidence_reason.strip():
+            issues.append("missing_confidence_reason")
+        return issues
+
+    def __str__(self):
+        return self.entity.canonical_name
+
+
+class ProcessAssertionRelation(models.Model):
+    """Ordnet eine einzelne Aussage einem Prozess zu, ohne aus Gleichzeitigkeit Kausalität abzuleiten."""
+
+    class Type(models.TextChoices):
+        MANIFESTS_IN = "manifests_in", "Manifestiert sich in"
+        MATERIAL_TRACE = "material_trace", "Hinterlässt materielle Spur"
+        INSTITUTIONALIZED_BY = "institutionalized_by", "Wird institutionalisiert durch"
+        LEGITIMIZED_BY = "legitimized_by", "Wird legitimiert durch"
+        SPREADS_THROUGH = "spreads_through", "Verbreitet sich durch"
+        INFLUENCES = "influences", "Beeinflusst"
+        CONTRIBUTES_TO = "contributes_to", "Trägt bei zu"
+        REACTION_TO = "reaction_to", "Ist Reaktion auf"
+        OPPOSES = "opposes", "Steht im Gegensatz zu"
+        PART_OF = "part_of", "Ist Teil von"
+        SIMILAR_TO = "similar_to", "Ähnelt"
+        CONTEMPORARY_WITH = "contemporary_with", "Ist gleichzeitig mit"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    process = models.ForeignKey(HistoricalProcess, related_name="assertion_relations", on_delete=models.CASCADE)
+    assertion = models.ForeignKey(Assertion, related_name="process_relations", on_delete=models.CASCADE)
+    relation_type = models.CharField(max_length=32, choices=Type.choices)
+    evidence_level = models.CharField(max_length=32, choices=AssertionRelation.EvidenceLevel.choices)
+    summary = models.TextField()
+    mechanism = models.TextField(blank=True)
+    time_start_year = models.BigIntegerField(null=True, blank=True)
+    time_end_year = models.BigIntegerField(null=True, blank=True)
+    temporal_uncertainty_years = models.PositiveBigIntegerField(default=0)
+    spatial_extent = models.GeometryField(srid=4326, geography=True, null=True, blank=True)
+    spatial_precision_meters = models.PositiveBigIntegerField(null=True, blank=True)
+    confidence = models.DecimalField(
+        max_digits=4,
+        decimal_places=3,
+        validators=[MinValueValidator(0), MaxValueValidator(1)],
+    )
+    confidence_reason = models.TextField()
+    extraction_method = models.CharField(max_length=120, default="manual")
+    algorithm_name = models.CharField(max_length=160, blank=True)
+    algorithm_version = models.CharField(max_length=80, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Assertion.Status.choices,
+        default=Assertion.Status.CANDIDATE,
+    )
+    evidence = models.ManyToManyField(Evidence, related_name="process_assertion_relations", blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["relation_type", "evidence_level"]),
+            models.Index(fields=["status", "confidence"]),
+            models.Index(fields=["time_start_year", "time_end_year"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["process", "assertion", "relation_type", "evidence_level"],
+                name="unique_process_assertion_relation",
+            ),
+            models.CheckConstraint(condition=~models.Q(summary=""), name="process_relation_summary_required"),
+            models.CheckConstraint(
+                condition=~models.Q(confidence_reason=""),
+                name="process_relation_confidence_reason_required",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(time_start_year__isnull=True)
+                    | models.Q(time_end_year__isnull=True)
+                    | models.Q(time_start_year__lte=models.F("time_end_year"))
+                ),
+                name="process_relation_time_order",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(evidence_level="coincidence")
+                    | models.Q(relation_type="contemporary_with")
+                ),
+                name="process_coincidence_is_only_contemporary",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(evidence_level="algorithmic_similarity")
+                    | models.Q(relation_type="similar_to")
+                ),
+                name="process_algorithmic_similarity_type",
+            ),
+        ]
+
+    def clean(self):
+        errors = {}
+        if (
+            self.evidence_level == AssertionRelation.EvidenceLevel.COINCIDENCE
+            and self.relation_type != self.Type.CONTEMPORARY_WITH
+        ):
+            errors["evidence_level"] = "Bloße Gleichzeitigkeit darf nicht als Wirkung des Prozesses gespeichert werden."
+        if self.evidence_level == AssertionRelation.EvidenceLevel.ALGORITHMIC_SIMILARITY:
+            if self.relation_type != self.Type.SIMILAR_TO:
+                errors["relation_type"] = "Automatisch erkannte Ähnlichkeit benötigt den Beziehungstyp ‚ähnelt‘."
+            if not self.algorithm_name or not self.algorithm_version:
+                errors["algorithm_name"] = "Algorithmus und Version müssen nachvollziehbar angegeben werden."
+        if (
+            self.time_start_year is not None
+            and self.time_end_year is not None
+            and self.time_start_year > self.time_end_year
+        ):
+            errors["time_end_year"] = "Das Ende darf nicht vor dem Anfang liegen."
+        if not self.summary.strip():
+            errors["summary"] = "Die Beziehung benötigt eine kurze Beschreibung."
+        if not self.confidence_reason.strip():
+            errors["confidence_reason"] = "Der Vertrauenswert benötigt eine kurze Begründung."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def integrity_issues(self):
+        issues = []
+        if (
+            self.evidence_level
+            in {
+                AssertionRelation.EvidenceLevel.DOCUMENTED,
+                AssertionRelation.EvidenceLevel.SCHOLARLY_PLAUSIBLE,
+            }
+            and self.pk
+            and not self.evidence.exists()
+        ):
+            issues.append("missing_relation_evidence")
+        return issues
+
+    def __str__(self):
+        return f"{self.process} → {self.get_relation_type_display()} → {self.assertion}"
 
 
 class WikipediaPortal(models.Model):

@@ -8,6 +8,7 @@ import {
   loadExplorationContext,
   loadExplorationResults,
   loadExplorationTimeline,
+  loadHistoricalProcesses,
   loadLivingConditions,
   loadResearch,
   loadTimeWorld,
@@ -76,6 +77,19 @@ const CONTENT_CATEGORY_KEYS = {
   movement: "categoryMovement",
   place: "categoryPlace",
   other: "categoryOther",
+};
+
+const PROCESS_TYPE_KEYS = {
+  intellectual: "processIntellectual",
+  political: "processPolitical",
+  social: "processSocial",
+  economic: "processEconomic",
+  religious: "processReligious",
+  cultural: "processCultural",
+  environmental: "processEnvironmental",
+  technological: "processTechnological",
+  demographic: "processDemographic",
+  other: "processOther",
 };
 
 const SPATIAL_CONTENT_CATEGORIES = new Set(["place", "building", "event", "conflict", "natural_event", "political_event", "religious_event", "cultural_event"]);
@@ -383,6 +397,73 @@ function TimeWorld({ timeWorld, onPlaceSelect }) {
       ))}
       <p className="scope-note">{t("scopeBasis")}</p>
     </div>
+  );
+}
+
+function localizedMetadata(values) {
+  if (!values || typeof values !== "object") return "";
+  return values[uiLocale] || values.en || values.de || values.fr || Object.values(values)[0] || "";
+}
+
+function processPeriod(process) {
+  const start = process.temporal_extent?.start_year;
+  const end = process.temporal_extent?.end_year;
+  if (start == null && end == null) return t("notSpecified");
+  if (start == null) return `${t("until")} ${yearLabel(end)}`;
+  if (end == null || end === start) return yearLabel(start);
+  return `${yearLabel(start)}–${yearLabel(end)}`;
+}
+
+function HistoricalProcesses({ data }) {
+  if (!data?.count) return null;
+  return (
+    <section className="historical-processes" aria-label={t("evidenceDossiers")}>
+      <div className="section-heading dossier-heading">
+        <h3>{t("evidenceDossiers")}</h3>
+        <span>{data.count} {t(data.count === 1 ? "dossier" : "dossiers")}</span>
+      </div>
+      <p className="dossier-intro">{t("dossierIntro")}</p>
+      {data.processes.map((process) => {
+        const summary = localizedMetadata(process.metadata?.summaries) || process.summary;
+        const question = localizedMetadata(process.metadata?.editorial_questions);
+        const relations = process.assertion_relations ?? [];
+        const evidenceLevels = process.evidence_levels ?? {};
+        const integrityIssues = process.integrity_issues ?? [];
+        return (
+          <article className={`dossier-card ${process.status}`} key={process.id}>
+            <div className="dossier-meta">
+              <span>{translatedCode(process.process_type, PROCESS_TYPE_KEYS, process.process_type_label)}</span>
+              <strong>{processPeriod(process)}</strong>
+            </div>
+            <h4>{process.entity.canonical_name}</h4>
+            <p>{summary}</p>
+            {question && <div className="dossier-question"><span>{t("editorialQuestion")}</span><strong>{question}</strong></div>}
+            <div className="dossier-evidence" aria-label={t("evidenceProfile")}>
+              {Object.entries(evidenceLevels).filter(([, count]) => count > 0).map(([level, count]) => (
+                <span className={level} key={level}>{t(ASSERTION_RELATION_EVIDENCE_KEYS[level])} · {count}</span>
+              ))}
+            </div>
+            {relations.length > 0 && <div className="dossier-findings">
+              {relations.slice(0, 4).map((relation) => {
+                const start = relation.assertion?.temporal_extent?.start?.year;
+                const end = relation.assertion?.temporal_extent?.end?.year;
+                return (
+                  <div className={`dossier-finding ${relation.evidence_level}`} key={relation.id}>
+                    <span>{start == null ? t("notSpecified") : end && end !== start ? `${yearLabel(start)}–${yearLabel(end)}` : yearLabel(start)}</span>
+                    <strong>{relation.assertion?.subject?.canonical_name}</strong>
+                    <small>{t(ASSERTION_RELATION_EVIDENCE_KEYS[relation.evidence_level])}</small>
+                  </div>
+                );
+              })}
+            </div>}
+            <footer>
+              <span>{Math.round(Number(process.confidence) * 100)} % {t("confidence")}</span>
+              {integrityIssues.length > 0 && <span className="review-open">{t("processReviewOpen")}</span>}
+            </footer>
+          </article>
+        );
+      })}
+    </section>
   );
 }
 
@@ -847,6 +928,7 @@ export default function App() {
   const [results, setResults] = useState(null);
   const [timeline, setTimeline] = useState(null);
   const [timeWorld, setTimeWorld] = useState(null);
+  const [historicalProcesses, setHistoricalProcesses] = useState(null);
   const [livingConditions, setLivingConditions] = useState(null);
   const [environmentalSearch, setEnvironmentalSearch] = useState(null);
   const [livingOpen, setLivingOpen] = useState(false);
@@ -875,13 +957,14 @@ export default function App() {
     setError("");
     try {
       const current = explorationRef.current;
-      const [nextResults, nextTimeline, nextTimeWorld, nextEventDossier, nextLivingConditions, nextEnvironmentalSearch] = await Promise.all([
+      const [nextResults, nextTimeline, nextTimeWorld, nextEventDossier, nextLivingConditions, nextEnvironmentalSearch, nextHistoricalProcesses] = await Promise.all([
         loadExplorationResults(contextId),
         loadExplorationTimeline(contextId),
         loadTimeWorld(contextId),
         current?.focus_entity ? loadEventDossier(contextId) : Promise.resolve(null),
         loadLivingConditions(contextId),
         current?.query_mode === "environment" ? loadEnvironmentalEvents(contextId) : Promise.resolve(null),
+        loadHistoricalProcesses(contextId),
       ]);
       setResults(nextResults);
       setTimeline(nextTimeline);
@@ -889,6 +972,7 @@ export default function App() {
       setEventDossier(nextEventDossier);
       setLivingConditions(nextLivingConditions);
       setEnvironmentalSearch(nextEnvironmentalSearch);
+      setHistoricalProcesses(nextHistoricalProcesses);
     } catch {
       setError(t("apiUnavailable"));
     } finally {
@@ -1335,6 +1419,7 @@ export default function App() {
           ) : isSpaceAnchor ? (
             <>
               <PlaceTimeline timeline={timeline} onMomentSelect={pivotToTime} />
+              <HistoricalProcesses data={historicalProcesses} />
               <div className="section-heading nearby-heading">
                 <h3>{exploration.focus_entity ? t("verifiedPlaceLinks") : t("placesNearby")}</h3><span>{results?.count ?? 0} {t("entries")}</span>
               </div>
@@ -1352,7 +1437,10 @@ export default function App() {
               onPlaceSelect={pivotToPlace}
             />
           ) : (
-            <TimeWorld timeWorld={timeWorld} onPlaceSelect={pivotToPlace} />
+            <>
+              <HistoricalProcesses data={historicalProcesses} />
+              <TimeWorld timeWorld={timeWorld} onPlaceSelect={pivotToPlace} />
+            </>
           )}
         </div>
       </aside>

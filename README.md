@@ -35,6 +35,8 @@ Die Wissensbasis speichert einzelne Aussagen statt kopierter Artikel. Jede Aussa
 
 Die Zeit→Raum-Ansicht bezeichnet diese Datensätze bewusst als Befunde, nicht pauschal als Ereignisse. Eine nachvollziehbare Präsentationsklassifikation unterscheidet unter anderem Konflikte, Naturereignisse, politische, religiöse und kulturelle Ereignisse, Kunstwerke, Bauwerke, Persönlichkeiten, Organisationen, Bewegungen und Orte. Automatisch erkannte Häufungen werden getrennt von ihren Belegen als Muster oder offene Forschungsfragen dargestellt. Eine gemeinsame Zeit und Kategorie begründen weder Kausalität noch eine religiöse oder politische Deutung; dafür müssen Beteiligte, Motive und wissenschaftliche Quellen geprüft werden.
 
+Längerfristige Entwicklungen wie Nationalismus, Kolonialismus, Industrialisierung oder Kleine Eiszeit werden als `HistoricalProcess` modelliert. Ein Prozess besitzt einen eigenen Zeitraum, Raumbezug, Typ und Vertrauenswert, wird aber stets durch einzelne, quellengebundene Aussagen definiert. `ProcessAssertionRelation` verbindet ihn mit Ereignissen, Bauwerken, Texten oder Beobachtungen. Jede Verbindung trägt verpflichtend eine von vier Evidenzstufen: belegter Zusammenhang, wissenschaftlich plausible Einordnung, automatisch erkannte Ähnlichkeit oder bloße Gleichzeitigkeit. Gleichzeitigkeit kann technisch nicht als Ursache oder Einfluss gespeichert werden; algorithmische Ähnlichkeit benötigt einen benannten und versionierten Algorithmus.
+
 Bei Wikidata-Treffern führt der bevorzugte Link über die Objekt-ID unmittelbar zum Wikipedia-Artikel in der bevorzugten Browsersprache, sofern ein entsprechender Artikel existiert. Die Lebensbedingungen nennen den verwendeten Ort, die Koordinaten, den Radius und das historische Zeitfenster ausdrücklich; moderne Klimanormalwerte bleiben als Vergleichsdaten gekennzeichnet und werden nicht als Messung des historischen Jahres ausgegeben.
 
 Wikipedia-Portale bilden eine zusätzliche, kuratierte Entdeckungsschicht. `WikipediaPortal`, `PortalArticle` und `PortalScanRun` halten Portalrevision, Artikellink, Scanfortsetzung und Fehler getrennt fest. Das Portal gilt ausdrücklich nicht als Tatsachenevidenz: Jede extrahierte Aussage verweist auf den konkreten Artikel und dessen Fundstelle; der Portalweg wird nur als `discovery_only` ausgewiesen. Der langsame Hintergrundlauf verarbeitet kleine Pakete, respektiert Wikimedia-Drosselungen, repariert unvollständig gelieferte Artikel und lässt sich nach Unterbrechungen fortsetzen.
@@ -53,6 +55,7 @@ Wichtige Endpunkte:
 - `GET /api/v1/exploration-contexts/{id}/results/` – passende Aussagen für diesen Kontext
 - `GET /api/v1/exploration-contexts/{id}/timeline/` – datierte Ortschronik unabhängig vom aktuellen Fokusjahr
 - `GET /api/v1/exploration-contexts/{id}/time-world/` – georeferenzierte Ereignisse des Zeitfensters von lokal bis global
+- `GET /api/v1/exploration-contexts/{id}/processes/` – am gewählten Ort und in der gewählten Zeit sichtbare historische Prozesse samt Evidenzprofil
 - `GET /api/v1/exploration-contexts/{id}/event-dossier/` – Ereignisüberblick, Verlauf, Schauplätze und Bezug zum festgehaltenen Ausgangsort
 - `GET /api/v1/exploration-contexts/{id}/environmental-events/` – Naturereignisse nach Kategorie über alle gespeicherten Zeiten, weltweit oder mit Ortsbezug
 - `POST /api/v1/exploration-contexts/{id}/research/` – Recherche direkt aus dem gespeicherten Kontext
@@ -62,6 +65,9 @@ Wichtige Endpunkte:
 - `GET /api/v1/entities/` – Wissensobjekte durchsuchen
 - `GET /api/v1/sources/` – Quellenregister anzeigen
 - `GET /api/v1/wikipedia-portals/` – Portal-Katalog mit Sprache, Scanstand und Aussagezahl
+- `GET /api/v1/historical-processes/?year=1816&q=Klima` – historische Prozesse nach Zeit, Typ oder Suchbegriff
+- `GET /api/v1/historical-processes/{id}/` – Prozess mit definierenden Aussagen und allen qualifizierten Verbindungen
+- `GET /api/v1/process-assertion-relations/?evidence_level=documented` – Prozessbezüge nach Evidenzstufe
 
 Beispiel:
 
@@ -85,6 +91,14 @@ docker compose exec api python manage.py import_noaa_earthquakes
 docker compose exec api python manage.py import_noaa_tsunamis
 ```
 
+Die kuratierten Startdossiers werden ebenfalls idempotent aus bereits
+quellengebundenen Aussagen aufgebaut. Fehlen die erforderlichen Belege, wird
+ein Dossier sichtbar übersprungen statt mit ungesicherten Aussagen gefüllt:
+
+```sh
+docker compose exec api python manage.py seed_historical_dossiers
+```
+
 ## Funktionen
 
 - nichtlineare Zeitachse von der frühen Erde bis heute
@@ -100,6 +114,7 @@ docker compose exec api python manage.py import_noaa_tsunamis
 - automatische weltweite Zeitrecherche über Wikidata mit CC0-, Objekt- und Unsicherheitsangaben
 - automatisch extrahierte Eckdaten mit auswählbaren Wikipedia-/Wikidata-Treffern
 - Kontextsuche nach zeitgleichen Bauwerken, Ereignissen und kulturellen oder sozialen Bewegungen
+- quellengebundene historische Prozesse mit strikt getrennten Ebenen für Beleg, plausible Einordnung, Ähnlichkeit und Gleichzeitigkeit
 - zeitlicher Fokus auf Ereignis, zehn oder hundert Jahre und räumlicher Fokus von 1 bis 1.000 km
 - genaue Eingabe von Jahr, Monat oder Tag, auch vor Christus
 - aktueller Standort oder freie Auswahl/Suche auf der Apple-Karte
@@ -129,4 +144,4 @@ xcodebuild -project ZeitUndRaum.xcodeproj -scheme ZeitUndRaum -sdk iphonesimulat
 
 ## Nächste produktreife Erweiterungen
 
-Als nächstes sollten Quellenadapter für Wikidata, historische Karten, Archive und Klimadaten serverseitig ergänzt werden. Danach folgen ein redaktioneller Prüfablauf, Benutzerkonten, API-Drosselung, externe Backups und HTTPS-Betrieb. Die lokale `HistoricalAtlas`-Schicht liefert bis dahin weiterhin eine kuratierte Synthese; Trefferqualität und Abdeckung bleiben je Ort und Epoche sichtbar.
+Die ersten Dossiers für Malta, Krempe, Tambora 1815–1816, Lissabon 1755 und Hamburg 1962 bilden nun die redaktionelle Referenz. Als nächstes werden ihre offenen Wirkungsfragen mit fachwissenschaftlichen Quellen und expliziten Relationsbelegen ergänzt, bevor regelbasierte Muster über Typ, Zeit und Raum folgen. Erst auf diesem stabilen Bestand wird `pgvector` für semantische Kandidaten eingesetzt; seine Treffer bleiben als automatisch erkannte Ähnlichkeiten gekennzeichnet und werden nie ohne zusätzliche Evidenz zu Ursachen. Weitere Quellenadapter, ein redaktioneller Prüfablauf, Benutzerkonten, API-Drosselung und externe Backups folgen schrittweise.

@@ -23,8 +23,10 @@ from knowledge.models import (
     Evidence,
     ExplorationContext,
     ExternalIdentifier,
+    HistoricalProcess,
     PortalArticle,
     PortalScanRun,
+    ProcessAssertionRelation,
     ResearchRequest,
     Source,
     WikipediaPortal,
@@ -377,6 +379,28 @@ class ContextAPITests(TestCase):
         }
         self.assertEqual(milestone_years, {1565, 1979, 2004})
 
+    def test_historical_dossier_seed_is_evidence_bound_and_idempotent(self):
+        call_command("seed_demo")
+        call_command("seed_malta_milestones")
+        call_command("seed_historical_dossiers")
+        call_command("seed_historical_dossiers")
+
+        processes = HistoricalProcess.objects.order_by("time_start_year")
+        self.assertEqual(processes.count(), 2)
+        self.assertEqual(ProcessAssertionRelation.objects.count(), 10)
+        self.assertTrue(
+            all(
+                relation.evidence.exists()
+                for relation in ProcessAssertionRelation.objects.all()
+            )
+        )
+        self.assertTrue(
+            all(
+                relation.metadata.get("causal_claim") is False
+                for relation in ProcessAssertionRelation.objects.all()
+            )
+        )
+
     @patch("knowledge.portal_ingest.wikipedia_article_pages")
     @patch("knowledge.portal_ingest.wikipedia_portal_links")
     def test_portal_scan_preserves_discovery_path_and_article_evidence(self, mocked_links, mocked_pages):
@@ -573,6 +597,144 @@ class ContextAPITests(TestCase):
         relation.algorithm_name = "Tripanion similarity"
         relation.algorithm_version = "1.0"
         relation.full_clean()
+
+    def test_historical_process_relations_preserve_evidence_levels(self):
+        assertion = Assertion.objects.get(fingerprint="1" * 64)
+        process_entity = Entity.objects.create(
+            canonical_name="Industrialisierung",
+            kind=Entity.Kind.PROCESS,
+            labels={"de": "Industrialisierung", "en": "Industrialisation"},
+        )
+        process = HistoricalProcess.objects.create(
+            entity=process_entity,
+            process_type=HistoricalProcess.Type.ECONOMIC,
+            summary="Langfristiger Wandel von Produktion, Arbeit und Infrastruktur.",
+            time_start_year=1750,
+            time_end_year=1950,
+            time_precision=Assertion.Precision.RANGE,
+            spatial_scope=Assertion.SpatialScope.REGION,
+            status=Assertion.Status.VERIFIED,
+            confidence=Decimal("0.9"),
+            confidence_reason="Zeitrahmen und Merkmale werden durch fachwissenschaftliche Aussagen gestützt.",
+        )
+        process.defining_assertions.add(assertion)
+        relation = ProcessAssertionRelation.objects.create(
+            process=process,
+            assertion=assertion,
+            relation_type=ProcessAssertionRelation.Type.MATERIAL_TRACE,
+            evidence_level=AssertionRelation.EvidenceLevel.DOCUMENTED,
+            summary="Das Bauwerk ist eine datierte materielle Spur des langfristigen Wandels.",
+            time_start_year=1828,
+            time_end_year=1832,
+            confidence=Decimal("0.82"),
+            confidence_reason="Die Baugeschichte ist quellenbelegt; die Prozesseinordnung ist explizit angegeben.",
+            status=Assertion.Status.VERIFIED,
+        )
+        relation.evidence.add(assertion.evidence.first())
+
+        invalid = ProcessAssertionRelation(
+            process=process,
+            assertion=assertion,
+            relation_type=ProcessAssertionRelation.Type.INFLUENCES,
+            evidence_level=AssertionRelation.EvidenceLevel.COINCIDENCE,
+            summary="Nur gleichzeitig.",
+            confidence=Decimal("0.2"),
+            confidence_reason="Keine Wirkungsquelle vorhanden.",
+        )
+        with self.assertRaises(ValidationError):
+            invalid.full_clean()
+
+        response = self.client.get(
+            "/api/v1/historical-processes/",
+            {"year": 1830, "lang": "de"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["processes"][0]["entity"]["canonical_name"], "Industrialisierung")
+        self.assertEqual(response.data["processes"][0]["evidence_levels"]["documented"], 1)
+        self.assertEqual(response.data["processes"][0]["integrity_issues"], [])
+
+    def test_process_similarity_requires_named_versioned_method(self):
+        assertion = Assertion.objects.get(fingerprint="1" * 64)
+        process = HistoricalProcess.objects.create(
+            entity=Entity.objects.create(canonical_name="Vergleichsprozess", kind=Entity.Kind.PROCESS),
+            process_type=HistoricalProcess.Type.OTHER,
+            summary="Ein Prozess für den methodischen Test.",
+            confidence=Decimal("0.5"),
+            confidence_reason="Testdatensatz.",
+        )
+        relation = ProcessAssertionRelation(
+            process=process,
+            assertion=assertion,
+            relation_type=ProcessAssertionRelation.Type.SIMILAR_TO,
+            evidence_level=AssertionRelation.EvidenceLevel.ALGORITHMIC_SIMILARITY,
+            summary="Semantisch ähnlicher Inhalt.",
+            confidence=Decimal("0.6"),
+            confidence_reason="Automatisch berechnete Textähnlichkeit.",
+            extraction_method="embedding-comparison",
+        )
+        with self.assertRaises(ValidationError):
+            relation.full_clean()
+
+        relation.algorithm_name = "Tripanion process similarity"
+        relation.algorithm_version = "1.0"
+        relation.full_clean()
+
+    def test_exploration_context_returns_only_locally_visible_processes(self):
+        local_assertion = Assertion.objects.get(fingerprint="1" * 64)
+        local_process = HistoricalProcess.objects.create(
+            entity=Entity.objects.create(canonical_name="Kirchenbau im 19. Jahrhundert", kind=Entity.Kind.PROCESS),
+            process_type=HistoricalProcess.Type.CULTURAL,
+            summary="Regionale Veränderung von Sakralbauten.",
+            time_start_year=1800,
+            time_end_year=1900,
+            status=Assertion.Status.VERIFIED,
+            confidence=Decimal("0.8"),
+            confidence_reason="Durch lokale Bauaussagen belegt.",
+        )
+        local_process.defining_assertions.add(local_assertion)
+
+        remote_entity = Entity.objects.create(canonical_name="Kathmandu-Prozess", kind=Entity.Kind.PROCESS)
+        remote_process = HistoricalProcess.objects.create(
+            entity=remote_entity,
+            process_type=HistoricalProcess.Type.CULTURAL,
+            summary="Ein zeitgleicher, aber räumlich nicht einschlägiger Testprozess.",
+            time_start_year=1800,
+            time_end_year=1900,
+            status=Assertion.Status.VERIFIED,
+            confidence=Decimal("0.8"),
+            confidence_reason="Testdatensatz mit getrenntem Raumbezug.",
+        )
+        remote_assertion = Assertion.objects.create(
+            subject=Entity.objects.create(canonical_name="Bauwerk in Kathmandu", kind=Entity.Kind.BUILDING),
+            predicate="constructed",
+            value_text="Ein entferntes Bauwerk.",
+            time_start_year=1830,
+            time_end_year=1830,
+            location=Point(85.324, 27.717, srid=4326),
+            status=Assertion.Status.VERIFIED,
+            confidence=Decimal("0.8"),
+            confidence_reason="Testdatensatz.",
+            fingerprint="5" * 64,
+        )
+        remote_process.defining_assertions.add(remote_assertion)
+
+        context = ExplorationContext.objects.create(
+            place_name="Krempe",
+            center=Point(9.489, 53.836, srid=4326),
+            time_focus_year=1830,
+            time_window_years=1,
+            radius_km=25,
+        )
+        response = self.client.get(f"/api/v1/exploration-contexts/{context.id}/processes/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(
+            response.data["processes"][0]["entity"]["canonical_name"],
+            "Kirchenbau im 19. Jahrhundert",
+        )
+        self.assertIn("kein Beleg", response.data["interpretation_note"])
 
     def test_living_conditions_keep_prior_event_for_current_environmental_effect(self):
         context = ExplorationContext.objects.create(

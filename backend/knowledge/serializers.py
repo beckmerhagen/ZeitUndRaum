@@ -17,6 +17,8 @@ from .models import (
     Evidence,
     ExplorationContext,
     ExternalIdentifier,
+    HistoricalProcess,
+    ProcessAssertionRelation,
     ResearchRequest,
     Source,
     PortalArticle,
@@ -369,6 +371,114 @@ class AssertionRelationSerializer(serializers.ModelSerializer):
 
 def geometry_geojson(geometry):
     return json.loads(geometry.geojson) if geometry else None
+
+
+class HistoricalProcessReferenceSerializer(serializers.ModelSerializer):
+    entity = EntitySerializer(read_only=True)
+    process_type_label = serializers.CharField(source="get_process_type_display", read_only=True)
+    temporal_extent = serializers.SerializerMethodField()
+    spatial_extent = serializers.SerializerMethodField()
+
+    class Meta:
+        model = HistoricalProcess
+        fields = (
+            "id",
+            "entity",
+            "process_type",
+            "process_type_label",
+            "summary",
+            "temporal_extent",
+            "spatial_extent",
+            "spatial_scope",
+            "spatial_precision_meters",
+            "status",
+            "confidence",
+            "confidence_reason",
+        )
+
+    def get_temporal_extent(self, obj):
+        return obj.temporal_extent
+
+    def get_spatial_extent(self, obj):
+        return geometry_geojson(obj.spatial_extent)
+
+
+class ProcessAssertionRelationSerializer(serializers.ModelSerializer):
+    process = HistoricalProcessReferenceSerializer(read_only=True)
+    assertion = AssertionReferenceSerializer(read_only=True)
+    relation_type_label = serializers.CharField(source="get_relation_type_display", read_only=True)
+    evidence_level_label = serializers.CharField(source="get_evidence_level_display", read_only=True)
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    spatial_extent = serializers.SerializerMethodField()
+    evidence = EvidenceSerializer(many=True, read_only=True)
+    integrity_issues = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProcessAssertionRelation
+        fields = (
+            "id",
+            "process",
+            "assertion",
+            "relation_type",
+            "relation_type_label",
+            "evidence_level",
+            "evidence_level_label",
+            "summary",
+            "mechanism",
+            "time_start_year",
+            "time_end_year",
+            "temporal_uncertainty_years",
+            "spatial_extent",
+            "spatial_precision_meters",
+            "confidence",
+            "confidence_reason",
+            "extraction_method",
+            "algorithm_name",
+            "algorithm_version",
+            "status",
+            "status_label",
+            "metadata",
+            "evidence",
+            "integrity_issues",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_spatial_extent(self, obj):
+        return geometry_geojson(obj.spatial_extent)
+
+    def get_integrity_issues(self, obj):
+        return obj.integrity_issues()
+
+
+class HistoricalProcessSerializer(HistoricalProcessReferenceSerializer):
+    defining_assertions = AssertionReferenceSerializer(many=True, read_only=True)
+    assertion_relations = ProcessAssertionRelationSerializer(many=True, read_only=True)
+    evidence_levels = serializers.SerializerMethodField()
+    integrity_issues = serializers.SerializerMethodField()
+
+    class Meta(HistoricalProcessReferenceSerializer.Meta):
+        fields = HistoricalProcessReferenceSerializer.Meta.fields + (
+            "defining_assertions",
+            "assertion_relations",
+            "evidence_levels",
+            "integrity_issues",
+            "metadata",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_evidence_levels(self, obj):
+        counts = {
+            choice: 0
+            for choice, _label in ProcessAssertionRelation._meta.get_field("evidence_level").choices
+        }
+        for relation in obj.assertion_relations.all():
+            counts[relation.evidence_level] += 1
+        return counts
+
+    def get_integrity_issues(self, obj):
+        return obj.integrity_issues()
 
 
 class EnvironmentalDatasetSerializer(serializers.ModelSerializer):

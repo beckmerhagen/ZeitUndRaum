@@ -12,9 +12,11 @@ from .models import (
     Evidence,
     ExplorationContext,
     ExternalIdentifier,
+    HistoricalProcess,
     PlaceGeometry,
     PortalArticle,
     PortalScanRun,
+    ProcessAssertionRelation,
     ResearchRequest,
     Source,
     WikipediaPortal,
@@ -52,6 +54,8 @@ admin.site.register(EnvironmentalEvent)
 admin.site.register(EnvironmentalObservation)
 admin.site.register(EnvironmentalRelation)
 admin.site.register(AssertionRelation)
+admin.site.register(HistoricalProcess)
+admin.site.register(ProcessAssertionRelation)
 admin.site.register(WikipediaPortal)
 admin.site.register(PortalArticle)
 admin.site.register(PortalScanRun)

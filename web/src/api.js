@@ -57,6 +57,11 @@ export function loadEnvironmentalEvents(id) {
   return request(`/exploration-contexts/${id}/environmental-events/`);
 }
 
+export function loadHistoricalProcesses(id) {
+  const language = typeof document === "undefined" ? "en" : (document.documentElement.lang || "en");
+  return request(`/exploration-contexts/${id}/processes/?lang=${encodeURIComponent(language)}`);
+}
+
 export function loadEventDossier(id) {
   return request(`/exploration-contexts/${id}/event-dossier/`);
 }

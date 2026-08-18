@@ -109,6 +109,33 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .pattern-card > strong { font-size: 13px; }
 .pattern-card > p { margin: 0; color: rgba(255,255,255,.68); font-size: 11px; line-height: 1.4; }
 .pattern-card > small { color: rgba(255,255,255,.44); font-size: 9px; line-height: 1.4; }
+.historical-processes { display: grid; gap: 9px; margin: 18px 0 20px; padding-top: 16px; border-top: 1px solid rgba(225,184,106,.2); }
+.dossier-heading { margin-bottom: 0; }
+.dossier-intro { margin: 0 2px 3px; color: rgba(255,255,255,.5); font-size: 10px; line-height: 1.45; }
+.dossier-card { padding: 14px; border: 1px solid rgba(225,184,106,.24); border-radius: 16px; background: linear-gradient(145deg, rgba(225,184,106,.1), rgba(255,255,255,.04)); }
+.dossier-card.verified { border-color: rgba(117,217,177,.3); background: linear-gradient(145deg, rgba(117,217,177,.11), rgba(255,255,255,.04)); }
+.dossier-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.dossier-meta span { color: #e1b86a; font-size: 9px; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
+.dossier-card.verified .dossier-meta span { color: #75d9b1; }
+.dossier-meta strong { color: rgba(255,255,255,.72); font-size: 11px; font-variant-numeric: tabular-nums; }
+.dossier-card h4 { margin: 7px 0 6px; color: #f6f3eb; font-size: 17px; line-height: 1.25; }
+.dossier-card > p { margin: 0; color: rgba(255,255,255,.68); font-size: 11px; line-height: 1.48; }
+.dossier-question { display: grid; gap: 3px; margin-top: 11px; padding: 9px 10px; border-left: 2px solid rgba(225,184,106,.55); background: rgba(0,0,0,.1); }
+.dossier-question span { color: #e1b86a; font-size: 8px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.dossier-question strong { color: rgba(255,255,255,.82); font-size: 11px; line-height: 1.4; }
+.dossier-evidence { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.dossier-evidence span { padding: 4px 6px; color: rgba(255,255,255,.58); border: 1px solid rgba(255,255,255,.1); border-radius: 999px; font-size: 8px; }
+.dossier-evidence .documented { color: #75d9b1; border-color: rgba(117,217,177,.25); }
+.dossier-evidence .scholarly_plausible { color: #72bce8; border-color: rgba(114,188,232,.25); }
+.dossier-evidence .algorithmic_similarity, .dossier-evidence .coincidence { color: #e1b86a; border-color: rgba(225,184,106,.25); }
+.dossier-findings { display: grid; gap: 5px; margin-top: 11px; }
+.dossier-finding { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 2px 8px; padding: 8px 9px; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; background: rgba(255,255,255,.035); }
+.dossier-finding > span { grid-row: 1 / span 2; align-self: center; color: #e1b86a; font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.dossier-finding > strong { overflow: hidden; color: rgba(255,255,255,.82); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.dossier-finding > small { color: rgba(255,255,255,.43); font-size: 8px; }
+.dossier-finding.documented > small { color: #75d9b1; }
+.dossier-card footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 11px; padding-top: 9px; color: rgba(255,255,255,.42); border-top: 1px solid rgba(255,255,255,.08); font-size: 9px; }
+.dossier-card footer .review-open { color: #e1b86a; }
 .scope-note { padding: 8px 2px 2px; color: rgba(255,255,255,.42) !important; font-size: 10px; }
 .living-conditions { display: grid; gap: 18px; padding-bottom: 8px; }
 .environment-search-results { display: grid; gap: 10px; padding-bottom: 8px; }
