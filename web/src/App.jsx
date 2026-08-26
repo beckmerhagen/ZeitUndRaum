@@ -21,6 +21,7 @@ import { coverageLabel, formatNumber, preferredLanguages, t, uiLocale, yearLabel
 
 const CONTEXT_STORAGE_KEY = "zeitundraum.explorationContext";
 const FALLBACK_LANGUAGES = preferredLanguages();
+const WORLD_OVERVIEW_ZOOM = 2.5;
 
 const DEFAULT_CONTEXT = {
   place_name: "Krempe",
@@ -208,7 +209,7 @@ function MapController({ exploration, eventPlaces, environmentalEvents, onPlaceC
     if (lastAutomaticViewRef.current === automaticViewKey) return;
     lastAutomaticViewRef.current = automaticViewKey;
     if (exploration.anchor_mode === "time") {
-      map.flyTo([22, 12], 2, { duration: 0.65 });
+      map.flyTo([22, 12], WORLD_OVERVIEW_ZOOM, { duration: 0.65 });
     } else if (exploration.anchor_mode === "environment") {
       const points = environmentalEvents.filter((item) => item.map_point);
       if (points.length > 1) {
@@ -219,7 +220,7 @@ function MapController({ exploration, eventPlaces, environmentalEvents, onPlaceC
       } else if (points.length === 1) {
         map.flyTo([points[0].map_point.latitude, points[0].map_point.longitude], 5, { duration: 0.65 });
       } else {
-        map.flyTo([22, 12], 2, { duration: 0.65 });
+        map.flyTo([22, 12], WORLD_OVERVIEW_ZOOM, { duration: 0.65 });
       }
     } else if (exploration.anchor_mode === "event" && eventPlaces.length) {
       map.fitBounds(
@@ -1317,6 +1318,9 @@ export default function App() {
         center={[exploration.center.latitude, exploration.center.longitude]}
         zoom={Number(exploration.map_zoom)}
         zoomControl
+        zoomSnap={0.25}
+        zoomDelta={0.25}
+        wheelPxPerZoomLevel={120}
         maxBounds={[[-85, -180], [85, 180]]}
         maxBoundsViscosity={1}
         className="map"
