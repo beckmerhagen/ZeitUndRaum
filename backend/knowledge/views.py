@@ -95,19 +95,30 @@ class WikidataWikipediaRedirectView(APIView):
             for item in identifier.entity.external_identifiers.filter(provider__startswith="wikipedia-")
             if item.url
         }
-        for language in languages:
-            if stored.get(language):
-                return redirect(stored[language])
+        first_stored_index = next(
+            (index for index, language in enumerate(languages) if stored.get(language)),
+            None,
+        )
+        if first_stored_index == 0:
+            return redirect(stored[languages[0]])
+
+        languages_to_resolve = (
+            languages
+            if first_stored_index is None
+            else languages[:first_stored_index]
+        )
 
         wikidata_url = identifier.url or f"https://www.wikidata.org/wiki/{qid}"
         try:
-            resolved = fetch_wikipedia_sitelinks([qid], languages).get(qid, {})
+            resolved = fetch_wikipedia_sitelinks([qid], languages_to_resolve).get(qid, {})
         except requests.RequestException:
+            if first_stored_index is not None:
+                return redirect(stored[languages[first_stored_index]])
             return redirect(wikidata_url)
         store_wikipedia_sitelinks(identifier.entity, qid, resolved)
         for language in languages:
-            if resolved.get(language):
-                return redirect(resolved[language])
+            if resolved.get(language) or stored.get(language):
+                return redirect(resolved.get(language) or stored[language])
         return redirect(wikidata_url)
 
 

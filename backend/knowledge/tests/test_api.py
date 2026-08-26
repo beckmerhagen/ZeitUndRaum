@@ -333,10 +333,15 @@ class ContextAPITests(TestCase):
             external_id="Q153015",
             url="https://www.wikidata.org/wiki/Q153015",
         )
+        ExternalIdentifier.objects.create(
+            entity=entity,
+            provider="wikipedia-en",
+            external_id="wikidata:Q153015",
+            url="https://en.wikipedia.org/wiki/Peace_of_M%C3%BCnster",
+        )
         fetch_sitelinks.return_value = {
             "Q153015": {
                 "nl": "https://nl.wikipedia.org/wiki/Vrede_van_M%C3%BCnster",
-                "en": "https://en.wikipedia.org/wiki/Peace_of_M%C3%BCnster",
             }
         }
 
@@ -347,7 +352,7 @@ class ContextAPITests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, "https://nl.wikipedia.org/wiki/Vrede_van_M%C3%BCnster")
-        fetch_sitelinks.assert_called_once_with(["Q153015"], ["nl", "en", "de", "fr"])
+        fetch_sitelinks.assert_called_once_with(["Q153015"], ["nl"])
         self.assertEqual(
             entity.external_identifiers.get(provider="wikipedia-nl").url,
             "https://nl.wikipedia.org/wiki/Vrede_van_M%C3%BCnster",
