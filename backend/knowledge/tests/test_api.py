@@ -1679,6 +1679,29 @@ class ContextAPITests(TestCase):
                 position=index,
             )
             article.assertions.add(founding_assertion)
+        unrelated_subject = Entity.objects.create(
+            canonical_name="Unrelated 1946 event",
+            kind=Entity.Kind.EVENT,
+        )
+        unrelated_assertion = Assertion.objects.create(
+            subject=unrelated_subject,
+            predicate="historical-mention",
+            value_text="This event is not geographically related to North Rhine-Westphalia.",
+            time_start_year=1946,
+            time_end_year=1946,
+            time_precision=Assertion.Precision.YEAR,
+            location=Point(-68.3, -54.8, srid=4326),
+            status=Assertion.Status.CANDIDATE,
+            confidence=Decimal("0.55"),
+            fingerprint="e" * 64,
+        )
+        unrelated_article = PortalArticle.objects.create(
+            portal=portal,
+            title="Unrelated portal link",
+            url="https://example.org/unrelated-portal-link",
+            position=3,
+        )
+        unrelated_article.assertions.add(unrelated_assertion)
         context = ExplorationContext.objects.create(
             place_name="Nordrhein Westfalen",
             center=Point(7.5, 51.5, srid=4326),

@@ -334,8 +334,6 @@ def exploration_timeline_scope_filter(exploration_context):
         | Q(subject__labels__icontains=place_name)
         | Q(location_entity__canonical_name__iexact=place_name)
         | Q(location_entity__labels__icontains=place_name)
-        | Q(portal_discoveries__portal__subject_entity__canonical_name__iexact=place_name)
-        | Q(portal_discoveries__portal__subject_entity__labels__icontains=place_name)
     )
     return spatial | named_place, local_radius_km
 
