@@ -1652,7 +1652,7 @@ class ContextAPITests(TestCase):
                 for index, subject in enumerate(recent_subjects, start=1000)
             ]
         )
-        Assertion.objects.create(
+        founding_assertion = Assertion.objects.create(
             subject=place,
             location_entity=place,
             predicate="founded",
@@ -1665,6 +1665,20 @@ class ContextAPITests(TestCase):
             confidence=Decimal("0.95"),
             fingerprint="f" * 64,
         )
+        portal = WikipediaPortal.objects.create(
+            language="de",
+            title="Portal:Nordrhein-Westfalen",
+            url="https://de.wikipedia.org/wiki/Portal:Nordrhein-Westfalen",
+            subject_entity=place,
+        )
+        for index in range(2):
+            article = PortalArticle.objects.create(
+                portal=portal,
+                title=f"Gründung Nordrhein-Westfalens {index}",
+                url=f"https://de.wikipedia.org/wiki/Nordrhein-Westfalen_{index}",
+                position=index,
+            )
+            article.assertions.add(founding_assertion)
         context = ExplorationContext.objects.create(
             place_name="Nordrhein Westfalen",
             center=Point(7.5, 51.5, srid=4326),
@@ -1678,8 +1692,11 @@ class ContextAPITests(TestCase):
         years = [moment["year"] for moment in response.data["moments"]]
         self.assertIn(1946, years)
         recent = next(moment for moment in response.data["moments"] if moment["year"] == 2025)
+        founding = next(moment for moment in response.data["moments"] if moment["year"] == 1946)
         self.assertEqual(recent["count"], 301)
         self.assertEqual(len(recent["assertions"]), 4)
+        self.assertEqual(founding["count"], 1)
+        self.assertEqual(len(founding["assertions"]), 1)
 
     def test_moving_space_anchor_clears_previous_event_focus(self):
         event = Entity.objects.create(canonical_name="Früheres Ereignis", kind=Entity.Kind.EVENT)

@@ -6,7 +6,7 @@ from django.contrib.gis.db.models.functions import Distance
 from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
 from django.db import connection, transaction
-from django.db.models import Count, F, Max, Min, Q, Window
+from django.db.models import Count, F, Max, Min, Q, Subquery, Window
 from django.db.models.functions import Coalesce, RowNumber
 from django.shortcuts import redirect
 from django.utils import timezone
@@ -719,10 +719,17 @@ class ExplorationContextTimelineView(APIView):
         )
         if filtered_by_event:
             assertions = assertions.filter(focus_entity_relevance_filter(exploration_context))
+        # Portal joins may reach the same assertion through several articles.
+        # Deduplicate primary keys before adding window functions; otherwise the
+        # row number itself makes formerly identical join rows distinct.
+        assertion_ids = assertions.order_by().values("pk").distinct()
         # Limit representatives per date, not raw assertions. A busy recent year
         # must never consume the complete result window and hide older milestones.
         assertions = (
-            prepared_assertions(assertions, exploration_context.center)
+            prepared_assertions(
+                Assertion.objects.filter(pk__in=Subquery(assertion_ids)),
+                exploration_context.center,
+            )
             .annotate(timeline_end_year=Coalesce("time_end_year", "time_start_year"))
             .annotate(
                 timeline_rank=Window(
