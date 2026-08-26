@@ -78,9 +78,11 @@ def store_wikipedia_sitelinks(entity, qid, sitelinks):
     """Persist only Wikipedia links that Wikidata confirms actually exist."""
 
     stored = 0
-    for language in WIKIPEDIA_LANGUAGES:
-        url = (sitelinks.get(language) or "").strip()
-        if not url:
+    for raw_language, raw_url in sitelinks.items():
+        language = str(raw_language).strip().casefold()
+        url = str(raw_url or "").strip()
+        expected_prefix = f"https://{language}.wikipedia.org/wiki/"
+        if not re.fullmatch(r"[a-z]{2,3}", language) or not url.startswith(expected_prefix):
             continue
         _, created = ExternalIdentifier.objects.update_or_create(
             provider=f"wikipedia-{language}",

@@ -216,6 +216,46 @@ class ContextAPITests(TestCase):
             "https://en.wikipedia.org/wiki/Action_of_4_June_1565",
         )
 
+    def test_wikipedia_link_prefers_browser_language_beyond_ui_locales(self):
+        entity = Entity.objects.create(canonical_name="Vrede van Münster", kind=Entity.Kind.EVENT)
+        ExternalIdentifier.objects.create(
+            entity=entity,
+            provider="wikidata",
+            external_id="Q153015",
+            url="https://www.wikidata.org/wiki/Q153015",
+        )
+        ExternalIdentifier.objects.create(
+            entity=entity,
+            provider="wikipedia-nl",
+            external_id="wikidata:Q153015",
+            url="https://nl.wikipedia.org/wiki/Vrede_van_M%C3%BCnster",
+        )
+        ExternalIdentifier.objects.create(
+            entity=entity,
+            provider="wikipedia-en",
+            external_id="wikidata:Q153015",
+            url="https://en.wikipedia.org/wiki/Peace_of_Münster",
+        )
+        assertion = Assertion.objects.create(
+            subject=entity,
+            predicate="point-in-time",
+            value_text="Peace treaty",
+            time_start_year=1648,
+            time_end_year=1648,
+            fingerprint="b" * 64,
+        )
+
+        serialized = AssertionSerializer(
+            assertion,
+            context={"preferred_languages": ["nl", "en", "de", "fr"]},
+        ).data
+
+        self.assertEqual(serialized["preferred_link"]["language"], "nl")
+        self.assertEqual(
+            serialized["preferred_link"]["url"],
+            "https://nl.wikipedia.org/wiki/Vrede_van_M%C3%BCnster",
+        )
+
     def test_wikidata_only_item_does_not_claim_a_nonexistent_wikipedia_article(self):
         entity = Entity.objects.create(canonical_name="Wikidata only", kind=Entity.Kind.EVENT)
         ExternalIdentifier.objects.create(
@@ -283,6 +323,35 @@ class ContextAPITests(TestCase):
         self.assertEqual(cached_response.status_code, 302)
         self.assertEqual(cached_response.url, "https://de.wikipedia.org/wiki/Norwegischer_Kreuzzug")
         fetch_sitelinks.assert_not_called()
+
+    @patch("knowledge.views.fetch_wikipedia_sitelinks")
+    def test_wikipedia_resolver_prefers_and_caches_browser_language(self, fetch_sitelinks):
+        entity = Entity.objects.create(canonical_name="Vrede van Münster", kind=Entity.Kind.EVENT)
+        ExternalIdentifier.objects.create(
+            entity=entity,
+            provider="wikidata",
+            external_id="Q153015",
+            url="https://www.wikidata.org/wiki/Q153015",
+        )
+        fetch_sitelinks.return_value = {
+            "Q153015": {
+                "nl": "https://nl.wikipedia.org/wiki/Vrede_van_M%C3%BCnster",
+                "en": "https://en.wikipedia.org/wiki/Peace_of_M%C3%BCnster",
+            }
+        }
+
+        response = self.client.get(
+            "/api/v1/wikipedia/Q153015/",
+            {"languages": "nl,en,de,fr"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "https://nl.wikipedia.org/wiki/Vrede_van_M%C3%BCnster")
+        fetch_sitelinks.assert_called_once_with(["Q153015"], ["nl", "en", "de", "fr"])
+        self.assertEqual(
+            entity.external_identifiers.get(provider="wikipedia-nl").url,
+            "https://nl.wikipedia.org/wiki/Vrede_van_M%C3%BCnster",
+        )
 
     @patch("knowledge.wikidata.requests.get")
     def test_wikidata_sitelink_backfill_stores_only_existing_language_articles(self, get):

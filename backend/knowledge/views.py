@@ -84,7 +84,7 @@ class WikidataWikipediaRedirectView(APIView):
             preferences = validate_language_preferences(raw_languages or ["en"])
         except serializers.ValidationError as error:
             return Response({"detail": error.detail}, status=status.HTTP_400_BAD_REQUEST)
-        languages = list(dict.fromkeys([*preferences, *WIKIPEDIA_LANGUAGES]))[:4]
+        languages = list(dict.fromkeys([*preferences, *WIKIPEDIA_LANGUAGES]))
         identifier = generics.get_object_or_404(
             ExternalIdentifier.objects.select_related("entity"),
             provider="wikidata",

@@ -1,10 +1,18 @@
 const SUPPORTED_LOCALES = ["en", "de", "fr"];
 
-export function detectLocale(reportedLanguages) {
-  const reported = reportedLanguages ?? (typeof navigator === "undefined"
+function reportedBrowserLanguages(reportedLanguages) {
+  return reportedLanguages ?? (typeof navigator === "undefined"
     ? []
     : (navigator.languages?.length ? navigator.languages : [navigator.language]));
-  const primary = String(reported[0] || "").trim().toLowerCase().split("-")[0];
+}
+
+function normalizeLanguage(value) {
+  const language = String(value || "").trim().toLowerCase().split("-")[0];
+  return /^[a-z]{2,3}$/.test(language) ? language : "";
+}
+
+export function detectLocale(reportedLanguages) {
+  const primary = normalizeLanguage(reportedBrowserLanguages(reportedLanguages)[0]);
   return SUPPORTED_LOCALES.includes(primary) ? primary : "en";
 }
 
@@ -13,8 +21,9 @@ const requestedLocale = typeof window === "undefined"
   : new URLSearchParams(window.location.search).get("lang")?.toLowerCase();
 export const uiLocale = SUPPORTED_LOCALES.includes(requestedLocale) ? requestedLocale : detectLocale();
 
-export function preferredLanguages(locale = uiLocale) {
-  return [...new Set([locale, "en", "de", "fr"])];
+export function preferredLanguages(locale = uiLocale, reportedLanguages) {
+  const browserLanguage = normalizeLanguage(reportedBrowserLanguages(reportedLanguages)[0]);
+  return [...new Set([browserLanguage, locale, "en", "de", "fr"].filter(Boolean))].slice(0, 4);
 }
 
 const messages = {
