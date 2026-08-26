@@ -139,7 +139,7 @@ function AssertionMapTooltip({ assertion }) {
   );
 
   return (
-    <Tooltip className="map-marker-tooltip" direction="top" offset={[0, -8]} opacity={1} interactive sticky>
+    <Tooltip className="map-marker-tooltip" direction="auto" offset={[10, 0]} opacity={1} interactive sticky>
       {preferredLink ? (
         <a
           className="map-marker-link"
