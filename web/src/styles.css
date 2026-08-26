@@ -14,22 +14,30 @@ button, select, input[type="range"] { touch-action: manipulation; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid rgba(117,217,177,.7); outline-offset: 2px; }
 
 .app-shell { min-height: 100dvh; overflow: hidden; }
-.map { position: fixed; inset: 0; z-index: 0; background: #1c2825; }
+.map { position: fixed; inset: 0; z-index: 0; width: 100vw; height: 100dvh; background: #1c2825; }
 .map .leaflet-tile-pane { filter: saturate(.45) brightness(.72) sepia(.12); }
 .map .leaflet-control-zoom { margin: calc(50dvh - 28px) 0 0 24px; border: 0; box-shadow: 0 8px 24px rgba(0,0,0,.3); }
 .map .leaflet-control-zoom a { color: #15201e; background: rgba(249,247,240,.94); border-color: rgba(20,30,28,.14); }
 .map .leaflet-control-attribution { color: #43514e; background: rgba(249,247,240,.72); }
-.map-marker-tooltip.leaflet-tooltip { width: min(320px, calc(100vw - 32px)); padding: 0; overflow: hidden; color: #f6f3eb; border: 1px solid rgba(255,255,255,.18); border-radius: 14px; background: rgba(18,27,25,.96); box-shadow: 0 16px 34px rgba(0,0,0,.42); white-space: normal; }
-.leaflet-tooltip-top.map-marker-tooltip::before { border-top-color: rgba(18,27,25,.96); }
-.leaflet-tooltip-right.map-marker-tooltip::before { border-right-color: rgba(18,27,25,.96); }
-.leaflet-tooltip-bottom.map-marker-tooltip::before { border-bottom-color: rgba(18,27,25,.96); }
-.leaflet-tooltip-left.map-marker-tooltip::before { border-left-color: rgba(18,27,25,.96); }
-.map-marker-link { display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; color: inherit; text-decoration: none; }
-.map-marker-link strong { color: #fff; font-size: 14px; line-height: 1.25; }
+.map-category-marker { display: grid; place-items: center; border: 0; background: transparent; }
+.map-category-marker span { width: 26px; height: 26px; display: grid; place-items: center; color: #17211f; border: 2px solid rgba(255,255,255,.64); border-radius: 9px; background: #e1b86a; box-shadow: 0 5px 14px rgba(0,0,0,.42); font-size: 14px; font-weight: 900; line-height: 1; transition: transform .15s ease, box-shadow .15s ease; }
+.map-category-marker:hover span, .map-category-marker:focus span { z-index: 2; transform: scale(1.18); box-shadow: 0 7px 20px rgba(0,0,0,.55); }
+.map-category-marker.conflict span { color: #fff; background: #b85a4f; }
+.map-category-marker.natural_event span { color: #09211a; background: #75d9b1; }
+.map-category-marker.political_event span { color: #fff; background: #5589a8; }
+.map-category-marker.religious_event span { color: #221a0d; background: #d7b77d; }
+.map-category-marker.cultural_event span, .map-category-marker.artwork span { color: #fff; background: #9d729d; }
+.map-category-marker.building span { color: #12212a; background: #7bb6cf; }
+.map-category-marker.place span { color: #17211f; background: #e1b86a; border-radius: 50%; }
+.map-marker-popup .leaflet-popup-content-wrapper { overflow: hidden; color: #f6f3eb; border: 1px solid rgba(255,255,255,.18); border-radius: 14px; background: rgba(18,27,25,.97); box-shadow: 0 16px 34px rgba(0,0,0,.42); }
+.map-marker-popup .leaflet-popup-content { width: min(320px, calc(100vw - 44px)) !important; margin: 0; }
+.map-marker-popup .leaflet-popup-tip { background: rgba(18,27,25,.97); box-shadow: 3px 3px 7px rgba(0,0,0,.2); }
+.map-marker-card { display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; color: inherit; cursor: pointer; }
+.map-marker-card strong { color: #fff; font-size: 14px; line-height: 1.25; }
 .map-marker-meta { color: #e1b86a; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .map-marker-description { display: -webkit-box; overflow: hidden; color: rgba(255,255,255,.72); font-size: 12px; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
-.map-marker-open { margin-top: 3px; color: #75d9b1; font-size: 11px; font-weight: 750; }
-.map-marker-link:hover .map-marker-open, .map-marker-link:focus-visible .map-marker-open { color: #a5f1d2; text-decoration: underline; }
+.map-marker-open { align-self: flex-start; margin-top: 3px; color: #75d9b1; font-size: 11px; font-weight: 750; text-decoration: none; }
+.map-marker-open:hover, .map-marker-open:focus-visible { color: #a5f1d2; text-decoration: underline; }
 .shade { position: fixed; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(7,13,12,.74), transparent 35%, transparent 56%, rgba(7,12,11,.8)); z-index: 500; }
 .glass { background: rgba(18,27,25,.79); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 20px 55px rgba(0,0,0,.3); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
 

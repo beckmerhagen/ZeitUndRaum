@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Circle, CircleMarker, MapContainer, TileLayer, Tooltip, useMapEvents } from "react-leaflet";
+import { divIcon } from "leaflet";
+import { Circle, MapContainer, Marker, Popup, TileLayer, useMapEvents } from "react-leaflet";
 import {
   ApiError,
   createExplorationContext,
@@ -21,7 +22,6 @@ import { coverageLabel, formatNumber, preferredLanguages, t, uiLocale, yearLabel
 
 const CONTEXT_STORAGE_KEY = "zeitundraum.explorationContext";
 const FALLBACK_LANGUAGES = preferredLanguages();
-const WORLD_OVERVIEW_ZOOM = 2.5;
 
 const DEFAULT_CONTEXT = {
   place_name: "Krempe",
@@ -127,34 +127,106 @@ function preferredAssertionLinkLabel(link) {
   return `${link.provider}: ${t("openOriginal")}`;
 }
 
-function AssertionMapTooltip({ assertion }) {
+const CATEGORY_MARKER_SYMBOLS = {
+  conflict: "⚔",
+  natural_event: "▲",
+  political_event: "⚑",
+  religious_event: "✦",
+  cultural_event: "♫",
+  event: "◆",
+  artwork: "◈",
+  building: "▥",
+  person: "●",
+  organization: "◎",
+  movement: "↝",
+  place: "⌖",
+  other: "•",
+};
+
+const ENVIRONMENTAL_MARKER_SYMBOLS = {
+  volcano: "▲",
+  earthquake: "≋",
+  tsunami: "≈",
+  storm_surge: "≋",
+  drought: "☀",
+  heatwave: "☀",
+  frost: "❄",
+  flood: "≈",
+  river_course_change: "↝",
+  other: "◆",
+};
+
+function categoryMarkerIcon(category = "other", symbol = null) {
+  const safeCategory = Object.hasOwn(CATEGORY_MARKER_SYMBOLS, category) ? category : "other";
+  return divIcon({
+    className: `map-category-marker ${safeCategory}`,
+    html: `<span aria-hidden="true">${symbol ?? CATEGORY_MARKER_SYMBOLS[safeCategory]}</span>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+    popupAnchor: [0, -14],
+  });
+}
+
+function AssertionMapPopup({ assertion, onClose }) {
   const preferredLink = preferredAssertionLink(assertion);
   const date = assertionDate(assertion);
-  const content = (
-    <>
-      <span className="map-marker-meta">{date}{date && assertion.content_category?.key ? " · " : ""}{assertion.content_category?.key ? categoryLabel(assertion.content_category.key) : ""}</span>
-      <strong>{assertion.subject.canonical_name}</strong>
-      {assertion.value && <span className="map-marker-description">{assertion.value}</span>}
-      {preferredLink && <span className="map-marker-open">{preferredAssertionLinkLabel(preferredLink)}</span>}
-    </>
-  );
-
   return (
-    <Tooltip className="map-marker-tooltip" direction="auto" offset={[10, 0]} opacity={1} interactive sticky>
-      {preferredLink ? (
-        <a
-          className="map-marker-link"
-          href={preferredLink.url}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(event) => event.stopPropagation()}
-          onMouseDown={(event) => event.stopPropagation()}
-          onDoubleClick={(event) => event.stopPropagation()}
-        >
-          {content}
-        </a>
-      ) : <div className="map-marker-link">{content}</div>}
-    </Tooltip>
+    <Popup
+      className="map-marker-popup"
+      autoPan
+      keepInView
+      closeButton={false}
+      maxWidth={340}
+      minWidth={220}
+      autoPanPaddingTopLeft={[20, 138]}
+      autoPanPaddingBottomRight={[20, 190]}
+    >
+      <div
+        className="map-marker-card"
+        onClick={onClose}
+      >
+        <span className="map-marker-meta">{date}{date && assertion.content_category?.key ? " · " : ""}{assertion.content_category?.key ? categoryLabel(assertion.content_category.key) : ""}</span>
+        <strong>{assertion.subject.canonical_name}</strong>
+        {assertion.value && <span className="map-marker-description">{assertion.value}</span>}
+        {preferredLink && (
+          <a
+            className="map-marker-open"
+            href={preferredLink.url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            {preferredAssertionLinkLabel(preferredLink)}
+          </a>
+        )}
+      </div>
+    </Popup>
+  );
+}
+
+function AssertionMapMarker({ assertion }) {
+  const markerRef = useRef(null);
+  const category = assertion.content_category?.key ?? "other";
+  return (
+    <Marker
+      ref={markerRef}
+      position={[assertion.location.latitude, assertion.location.longitude]}
+      icon={categoryMarkerIcon(category)}
+      eventHandlers={{
+        mouseover: () => markerRef.current?.openPopup(),
+      }}
+    >
+      <AssertionMapPopup
+        assertion={assertion}
+        onClose={(event) => {
+          event?.preventDefault?.();
+          event?.stopPropagation?.();
+          markerRef.current?.closePopup();
+        }}
+      />
+    </Marker>
   );
 }
 
@@ -180,10 +252,19 @@ function mergeExploration(base, patch) {
   return merged;
 }
 
+function worldOverviewZoom(map) {
+  const width = Math.max(320, map.getSize().x);
+  return Math.max(2.15, Math.min(4.5, Math.log2(width / 256) + 0.08));
+}
+
 function MapController({ exploration, eventPlaces, environmentalEvents, onPlaceChange, onZoomChange }) {
   const lastAutomaticViewRef = useRef("");
   const map = useMapEvents({
     click(event) {
+      if (map._popup) {
+        map.closePopup();
+        return;
+      }
       onPlaceChange({
         place_name: t("selectedPlace"),
         latitude: event.latlng.lat,
@@ -209,7 +290,7 @@ function MapController({ exploration, eventPlaces, environmentalEvents, onPlaceC
     if (lastAutomaticViewRef.current === automaticViewKey) return;
     lastAutomaticViewRef.current = automaticViewKey;
     if (exploration.anchor_mode === "time") {
-      map.flyTo([22, 12], WORLD_OVERVIEW_ZOOM, { duration: 0.65 });
+      map.flyTo([22, 12], worldOverviewZoom(map), { duration: 0.65 });
     } else if (exploration.anchor_mode === "environment") {
       const points = environmentalEvents.filter((item) => item.map_point);
       if (points.length > 1) {
@@ -220,7 +301,7 @@ function MapController({ exploration, eventPlaces, environmentalEvents, onPlaceC
       } else if (points.length === 1) {
         map.flyTo([points[0].map_point.latitude, points[0].map_point.longitude], 5, { duration: 0.65 });
       } else {
-        map.flyTo([22, 12], WORLD_OVERVIEW_ZOOM, { duration: 0.65 });
+        map.flyTo([22, 12], worldOverviewZoom(map), { duration: 0.65 });
       }
     } else if (exploration.anchor_mode === "event" && eventPlaces.length) {
       map.fitBounds(
@@ -235,6 +316,17 @@ function MapController({ exploration, eventPlaces, environmentalEvents, onPlaceC
       );
     }
   }, [automaticViewKey, environmentalEvents, eventPlaces, exploration.anchor_mode, exploration.center.latitude, exploration.center.longitude, exploration.map_zoom, map]);
+
+  useEffect(() => {
+    const fillWorldPanel = () => {
+      map.invalidateSize({ pan: false });
+      if (exploration.anchor_mode === "time") {
+        map.setView([22, 12], worldOverviewZoom(map), { animate: false });
+      }
+    };
+    map.on("resize", fillWorldPanel);
+    return () => map.off("resize", fillWorldPanel);
+  }, [exploration.anchor_mode, map]);
   return null;
 }
 
@@ -1007,6 +1099,7 @@ export default function App() {
   const [resolutionMessage, setResolutionMessage] = useState("");
   const [error, setError] = useState("");
   const explorationRef = useRef(null);
+  const cardsRef = useRef(null);
   const pendingPatchRef = useRef({});
   const patchTimerRef = useRef(null);
   const patchInFlightRef = useRef(false);
@@ -1087,6 +1180,20 @@ export default function App() {
     window.clearTimeout(patchTimerRef.current);
     patchTimerRef.current = window.setTimeout(flushPatch, delay);
   }, [adoptExploration, flushPatch]);
+
+  useEffect(() => {
+    if (!resultsOpen) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      cardsRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    resultsOpen,
+    exploration?.anchor_mode,
+    exploration?.place_name,
+    exploration?.time_focus_year,
+    exploration?.time_window_years,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1323,35 +1430,30 @@ export default function App() {
         wheelPxPerZoomLevel={120}
         maxBounds={[[-85, -180], [85, 180]]}
         maxBoundsViscosity={1}
+        closePopupOnClick={false}
         className="map"
       >
         <TileLayer noWrap attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         {(!isEnvironmentAnchor || exploration.environmental_place_name) && <Circle center={[exploration.center.latitude, exploration.center.longitude]} radius={exploration.radius_km * 1000} pathOptions={{ color: "#75d9b1", fillColor: "#75d9b1", fillOpacity: 0.12 }} />}
         {isTimeAnchor && worldEvents.slice(0, 160).map((assertion) => assertion.location && (
-          <CircleMarker
+          <AssertionMapMarker
             key={assertion.id}
-            center={[assertion.location.latitude, assertion.location.longitude]}
-            radius={7}
-            pathOptions={{ color: "#f2c46f", fillColor: "#f2c46f", fillOpacity: 0.72, weight: 2 }}
-          >
-            <AssertionMapTooltip assertion={assertion} />
-          </CircleMarker>
+            assertion={assertion}
+          />
         ))}
         {isEventAnchor && eventPlaces.slice(0, 160).map((assertion) => (
-          <CircleMarker
+          <Marker
             key={assertion.id}
-            center={[assertion.location.latitude, assertion.location.longitude]}
-            radius={7}
-            pathOptions={{ color: "#e1b86a", fillColor: "#e1b86a", fillOpacity: 0.76, weight: 2 }}
+            position={[assertion.location.latitude, assertion.location.longitude]}
+            icon={categoryMarkerIcon(assertion.content_category?.key ?? "event")}
             eventHandlers={{ click: () => pivotToPlace(assertion) }}
           />
         ))}
         {isEnvironmentAnchor && environmentalEvents.filter((event) => event.map_point).slice(0, 300).map((event) => (
-          <CircleMarker
+          <Marker
             key={event.id}
-            center={[event.map_point.latitude, event.map_point.longitude]}
-            radius={7}
-            pathOptions={{ color: "#72bce8", fillColor: "#e1b86a", fillOpacity: 0.78, weight: 2 }}
+            position={[event.map_point.latitude, event.map_point.longitude]}
+            icon={categoryMarkerIcon("natural_event", ENVIRONMENTAL_MARKER_SYMBOLS[event.event_type] ?? ENVIRONMENTAL_MARKER_SYMBOLS.other)}
             eventHandlers={{ click: () => pivotToEnvironmentalEvent(event) }}
           />
         ))}
@@ -1487,7 +1589,7 @@ export default function App() {
         )}
         {resolutionMessage && <p className="resolution-state">{resolutionMessage}</p>}
         {error && <p className="error" role="alert">{error}</p>}
-        <div className="cards">
+        <div className="cards" ref={cardsRef}>
           {livingOpen ? (
             <LivingConditions conditions={livingConditions} />
           ) : isEnvironmentAnchor ? (
