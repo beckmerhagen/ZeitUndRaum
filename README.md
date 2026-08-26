@@ -27,7 +27,9 @@ Der Webserver leitet `/api` intern an Django weiter. Dadurch kann die Web-App au
 - Redis und Celery für fortlaufende Hintergrundrecherche
 - React, Vite und Leaflet für den Webclient
 
-Der `ExplorationContext` ist der gemeinsame Zustand aller Bedienwege. Er speichert Ort, Kartenzoom, Fokusjahr, Zeitfenster, Radius, Thema, Perspektiven, Sprachen und den Umgang mit automatisch gefundenen Aussagen. Der `anchor_mode` bestimmt die Blickrichtung: `space` zeigt die Geschichte des festgehaltenen Ortes, `event` hält ein Ereignis mit seinem eigenen Zeitraum fest, `time` zeigt georeferenzierte Ereignisse des gewählten Zeitfensters über den aktuellen Radius hinaus und `environment` durchsucht Naturereignis-Kategorien über alle gespeicherten Zeiten – ohne Ortsangabe weltweit, mit einer kombinierten Eingabe wie `Hamburg Sturmflut` am aufgelösten Ort. Ein Ereignis besitzt einen eigenen `focus_entity`; der räumliche Ausgangsort bleibt daneben erhalten. Dadurch kann man einen Schauplatz betreten und anschließend zum selben Ereignisdossier zurückkehren. Jede Änderung ist partiell. Eine Versionsnummer schützt vor unbemerktem Überschreiben bei parallelen Eingaben.
+Der `ExplorationContext` ist der gemeinsame Zustand aller Bedienwege. Er speichert Ort, Kartenzoom, Fokusjahr, Zeitfenster, Radius, Thema, Perspektiven, Sprachen und den Umgang mit automatisch gefundenen Aussagen. Zeit und Raum sind zwei unabhängige Achsen: Das Zeitfenster kann endlich oder „Alle Zeiten“, der räumliche Fokus endlich oder „Weltweit“ sein. Bei endlichen Achsen gilt eine harte Schnittmenge – sichtbar sind nur Befunde innerhalb des gewählten Zeitfensters **und** innerhalb des Radius. Erst danach werden die wichtigsten Treffer nach Vertrauen, belegender Evidenz, Entfernung und Aktualität geordnet und auf standardmäßig 500, höchstens 1000 Befunde begrenzt. Durch Verkleinern eines der beiden Fokusse wird die Auswahl entsprechend feiner.
+
+Der `anchor_mode` bestimmt die Blickrichtung: `space` zeigt die Geschichte des festgehaltenen Ortes, `event` hält ein Ereignis mit seinem eigenen Zeitraum fest, `time` zeigt die georeferenzierten Befunde der gewählten Raum-Zeit-Schnittmenge und `environment` durchsucht Naturereignis-Kategorien über alle gespeicherten Zeiten – ohne Ortsangabe weltweit, mit einer kombinierten Eingabe wie `Hamburg Sturmflut` am aufgelösten Ort. Ein Ereignis besitzt einen eigenen `focus_entity`; der räumliche Ausgangsort bleibt daneben erhalten. Dadurch kann man einen Schauplatz betreten und anschließend zum selben Ereignisdossier zurückkehren. Automatische externe Recherche wird bei „Alle Zeiten“ oder „Weltweit“ nicht grenzenlos gestartet; diese Ansichten ordnen den bereits gespeicherten Wissensbestand. Jede Änderung ist partiell. Eine Versionsnummer schützt vor unbemerktem Überschreiben bei parallelen Eingaben.
 
 Die Web-App merkt sich die Kontext-ID lokal und ergänzt sie als `?context=…` in der Adresse. Damit überlebt der Raum-Zeit-Zustand ein Neuladen und kann über denselben Link auf einem anderen Endgerät geöffnet werden.
 
@@ -54,7 +56,7 @@ Wichtige Endpunkte:
 - `POST /api/v1/exploration-contexts/{id}/resolve/` – Eingabe als Ort, Ereignis, Naturereignis-Kategorie oder Thema einordnen
 - `GET /api/v1/exploration-contexts/{id}/results/` – passende Aussagen für diesen Kontext
 - `GET /api/v1/exploration-contexts/{id}/timeline/` – datierte Ortschronik unabhängig vom aktuellen Fokusjahr
-- `GET /api/v1/exploration-contexts/{id}/time-world/` – georeferenzierte Ereignisse des Zeitfensters von lokal bis global
+- `GET /api/v1/exploration-contexts/{id}/time-world/` – georeferenzierte Befunde der harten Raum-Zeit-Schnittmenge, gerankt und begrenzt (`limit`, maximal 1000)
 - `GET /api/v1/exploration-contexts/{id}/processes/` – am gewählten Ort und in der gewählten Zeit sichtbare historische Prozesse samt Evidenzprofil
 - `GET /api/v1/exploration-contexts/{id}/event-dossier/` – Ereignisüberblick, Verlauf, Schauplätze und Bezug zum festgehaltenen Ausgangsort
 - `GET /api/v1/exploration-contexts/{id}/environmental-events/` – Naturereignisse nach Kategorie über alle gespeicherten Zeiten, weltweit oder mit Ortsbezug
@@ -115,7 +117,8 @@ docker compose exec api python manage.py seed_historical_dossiers
 - automatisch extrahierte Eckdaten mit auswählbaren Wikipedia-/Wikidata-Treffern
 - Kontextsuche nach zeitgleichen Bauwerken, Ereignissen und kulturellen oder sozialen Bewegungen
 - quellengebundene historische Prozesse mit strikt getrennten Ebenen für Beleg, plausible Einordnung, Ähnlichkeit und Gleichzeitigkeit
-- zeitlicher Fokus auf Ereignis, zehn oder hundert Jahre und räumlicher Fokus von 1 bis 1.000 km
+- unabhängiger zeitlicher Fokus auf ein Ereignis, zehn, dreißig oder hundert Jahre beziehungsweise „Alle Zeiten“
+- unabhängiger räumlicher Fokus von 1 bis 1.000 km beziehungsweise „Weltweit“
 - genaue Eingabe von Jahr, Monat oder Tag, auch vor Christus
 - aktueller Standort oder freie Auswahl/Suche auf der Apple-Karte
 - epochengerechte Panoramen zu Natur, Wissen, Gesellschaft, Politik und Kultur

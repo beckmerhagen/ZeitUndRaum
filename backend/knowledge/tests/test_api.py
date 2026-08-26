@@ -1892,7 +1892,7 @@ class ContextAPITests(TestCase):
         self.assertEqual(response.data["moments"][0]["year"], 1625)
         self.assertNotIn(1828, [moment["year"] for moment in response.data["moments"]])
 
-    def test_time_world_finds_other_places_outside_radius(self):
+    def test_time_world_applies_space_radius_as_hard_filter(self):
         remote = Entity.objects.create(canonical_name="Ereignis in New York", kind=Entity.Kind.EVENT)
         Assertion.objects.create(
             subject=remote,
@@ -1915,18 +1915,123 @@ class ContextAPITests(TestCase):
         )
         response = self.client.get(f"/api/v1/exploration-contexts/{context.id}/time-world/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["count"], 2)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["total_count"], 1)
         scopes = {scope["key"]: scope for scope in response.data["scopes"]}
         self.assertEqual(scopes["local"]["count"], 1)
-        self.assertEqual(scopes["global"]["count"], 1)
+        self.assertEqual(scopes["global"]["count"], 0)
         self.assertEqual(response.data["result_semantics"], "dated_assertions_not_causal_events")
+        self.assertEqual(
+            response.data["filter_semantics"],
+            "intersection_of_independent_time_and_space_axes",
+        )
         self.assertEqual(response.data["selection"]["start_year"], 1830)
         self.assertEqual(response.data["selection"]["end_year"], 1830)
         self.assertEqual(response.data["selection"]["reference_place"]["radius_km"], 5)
         self.assertEqual(
             {category["key"] for category in response.data["categories"]},
-            {"building", "event"},
+            {"building"},
         )
+
+    def test_time_world_can_make_space_axis_unbounded(self):
+        remote = Entity.objects.create(canonical_name="Ereignis in New York", kind=Entity.Kind.EVENT)
+        Assertion.objects.create(
+            subject=remote,
+            predicate="historical-event",
+            value_text="Ein zeitgleiches Ereignis an einem anderen Ort.",
+            time_start_year=1830,
+            time_end_year=1830,
+            time_precision=Assertion.Precision.YEAR,
+            location=Point(-74.006, 40.7128, srid=4326),
+            status=Assertion.Status.VERIFIED,
+            confidence=Decimal("0.8"),
+            fingerprint="d" * 64,
+        )
+        context = ExplorationContext.objects.create(
+            center=Point(9.489, 53.836, srid=4326),
+            time_focus_year=1830,
+            time_window_years=0,
+            radius_km=5,
+            space_unbounded=True,
+            anchor_mode=ExplorationContext.AnchorMode.TIME,
+        )
+
+        response = self.client.get(f"/api/v1/exploration-contexts/{context.id}/time-world/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 2)
+        scopes = {scope["key"]: scope for scope in response.data["scopes"]}
+        self.assertEqual(scopes["local"]["count"], 1)
+        self.assertEqual(scopes["global"]["count"], 1)
+        self.assertTrue(response.data["selection"]["reference_place"]["space_unbounded"])
+        self.assertIsNone(response.data["selection"]["reference_place"]["radius_km"])
+
+    def test_time_world_can_make_time_axis_unbounded(self):
+        older = Entity.objects.create(canonical_name="Älteres Ereignis in Krempe", kind=Entity.Kind.EVENT)
+        Assertion.objects.create(
+            subject=older,
+            predicate="historical-event",
+            value_text="Ein lokales Ereignis aus einer anderen Zeit.",
+            time_start_year=1700,
+            time_end_year=1700,
+            time_precision=Assertion.Precision.YEAR,
+            location=Point(9.489, 53.836, srid=4326),
+            status=Assertion.Status.VERIFIED,
+            confidence=Decimal("0.8"),
+            fingerprint="e" * 64,
+        )
+        context = ExplorationContext.objects.create(
+            center=Point(9.489, 53.836, srid=4326),
+            time_focus_year=1830,
+            time_window_years=0,
+            time_unbounded=True,
+            radius_km=5,
+            anchor_mode=ExplorationContext.AnchorMode.TIME,
+        )
+
+        response = self.client.get(f"/api/v1/exploration-contexts/{context.id}/time-world/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 2)
+        self.assertTrue(response.data["selection"]["time_unbounded"])
+        self.assertIsNone(response.data["selection"]["start_year"])
+        self.assertIsNone(response.data["selection"]["end_year"])
+
+    def test_time_world_caps_results_after_evidence_ranking(self):
+        for index, confidence in enumerate((Decimal("0.2"), Decimal("0.95"))):
+            entity = Entity.objects.create(canonical_name=f"Rang {index}", kind=Entity.Kind.EVENT)
+            Assertion.objects.create(
+                subject=entity,
+                predicate="historical-event",
+                value_text=f"Rangfolge {index}.",
+                time_start_year=1900,
+                time_end_year=1900,
+                time_precision=Assertion.Precision.YEAR,
+                location=Point(9.489, 53.836, srid=4326),
+                status=Assertion.Status.VERIFIED,
+                confidence=confidence,
+                fingerprint=str(index + 6) * 64,
+            )
+        context = ExplorationContext.objects.create(
+            center=Point(9.489, 53.836, srid=4326),
+            time_focus_year=1900,
+            time_window_years=0,
+            radius_km=5,
+            anchor_mode=ExplorationContext.AnchorMode.TIME,
+        )
+
+        response = self.client.get(
+            f"/api/v1/exploration-contexts/{context.id}/time-world/",
+            {"limit": 1},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["total_count"], 2)
+        self.assertTrue(response.data["truncated"])
+        self.assertEqual(response.data["limit"], 1)
+        first = next(scope for scope in response.data["scopes"] if scope["count"])["assertions"][0]
+        self.assertEqual(first["subject"]["canonical_name"], "Rang 1")
 
     def test_time_world_exposes_conflict_cluster_as_question_not_causal_claim(self):
         for index, (name, longitude) in enumerate(

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { divIcon } from "leaflet";
+import { divIcon, latLng } from "leaflet";
 import { Circle, MapContainer, Marker, Popup, TileLayer, useMapEvents } from "react-leaflet";
 import {
   ApiError,
@@ -30,7 +30,9 @@ const DEFAULT_CONTEXT = {
   map_zoom: 11,
   time_focus_year: 1814,
   time_window_years: 0,
+  time_unbounded: false,
   radius_km: 25,
+  space_unbounded: false,
   query: "",
   query_mode: "auto",
   anchor_mode: "space",
@@ -279,7 +281,7 @@ function MapController({ exploration, eventPlaces, environmentalEvents, onPlaceC
   });
 
   const automaticViewKey = exploration.anchor_mode === "time"
-    ? `time:${exploration.time_focus_year}:${exploration.time_window_years}`
+    ? `time:${exploration.time_focus_year}:${exploration.time_window_years}:${exploration.time_unbounded}:${exploration.space_unbounded}`
     : exploration.anchor_mode === "environment"
       ? `environment:${exploration.environmental_place_name}:${environmentalEvents.map((item) => item.id).join(",")}`
       : exploration.anchor_mode === "event"
@@ -290,7 +292,20 @@ function MapController({ exploration, eventPlaces, environmentalEvents, onPlaceC
     if (lastAutomaticViewRef.current === automaticViewKey) return;
     lastAutomaticViewRef.current = automaticViewKey;
     if (exploration.anchor_mode === "time") {
-      map.flyTo([22, 12], worldOverviewZoom(map), { duration: 0.65 });
+      if (exploration.space_unbounded) {
+        map.flyTo([22, 12], worldOverviewZoom(map), { duration: 0.65 });
+      } else {
+        const focusBounds = latLng(
+          exploration.center.latitude,
+          exploration.center.longitude,
+        ).toBounds(Math.max(1, Number(exploration.radius_km)) * 2000);
+        map.fitBounds(focusBounds, {
+          padding: [70, 70],
+          maxZoom: 12,
+          animate: true,
+          duration: 0.65,
+        });
+      }
     } else if (exploration.anchor_mode === "environment") {
       const points = environmentalEvents.filter((item) => item.map_point);
       if (points.length > 1) {
@@ -315,18 +330,18 @@ function MapController({ exploration, eventPlaces, environmentalEvents, onPlaceC
         { duration: 0.55 },
       );
     }
-  }, [automaticViewKey, environmentalEvents, eventPlaces, exploration.anchor_mode, exploration.center.latitude, exploration.center.longitude, exploration.map_zoom, map]);
+  }, [automaticViewKey, environmentalEvents, eventPlaces, exploration.anchor_mode, exploration.center.latitude, exploration.center.longitude, exploration.map_zoom, exploration.radius_km, exploration.space_unbounded, map]);
 
   useEffect(() => {
     const fillWorldPanel = () => {
       map.invalidateSize({ pan: false });
-      if (exploration.anchor_mode === "time") {
+      if (exploration.anchor_mode === "time" && exploration.space_unbounded) {
         map.setView([22, 12], worldOverviewZoom(map), { animate: false });
       }
     };
     map.on("resize", fillWorldPanel);
     return () => map.off("resize", fillWorldPanel);
-  }, [exploration.anchor_mode, map]);
+  }, [exploration.anchor_mode, exploration.space_unbounded, map]);
   return null;
 }
 
@@ -498,7 +513,9 @@ function TimeWorld({ timeWorld, onPlaceSelect }) {
   }
   const selection = timeWorld.selection;
   const selectionRange = selection
-    ? selection.start_year === selection.end_year
+    ? selection.time_unbounded
+      ? t("allTimes")
+      : selection.start_year === selection.end_year
       ? yearLabel(selection.focus_year)
       : `${yearLabel(selection.start_year)}–${yearLabel(selection.end_year)}`
     : "";
@@ -508,13 +525,20 @@ function TimeWorld({ timeWorld, onPlaceSelect }) {
       {selection && <section className="world-context-card">
         <span>{t("timeSelection")}</span>
         <strong>{selectionRange}</strong>
-        <p>{selection.window_years > 0
+        {!selection.time_unbounded && <p>{selection.window_years > 0
           ? t("centeredWindow", { focus: yearLabel(selection.focus_year), years: selection.window_years })
-          : t("exactYearSelection", { year: yearLabel(selection.focus_year) })}</p>
+          : t("exactYearSelection", { year: yearLabel(selection.focus_year) })}</p>}
         <dl>
-          <div><dt>{t("referencePlace")}</dt><dd>{selection.reference_place.name} · {selection.reference_place.radius_km} km</dd></div>
+          <div><dt>{t("referencePlace")}</dt><dd>{selection.reference_place.space_unbounded
+            ? t("worldwide")
+            : `${selection.reference_place.name} · ${selection.reference_place.radius_km} km`}</dd></div>
           <div><dt>{t("meaningOfResults")}</dt><dd>{t("datedStatementsExplain")}</dd></div>
         </dl>
+        <p className="selection-note">{t("independentAxesNote")}</p>
+        {timeWorld.truncated && <p className="selection-note">{t("rankedResultsLimited", {
+          shown: timeWorld.count,
+          total: timeWorld.total_count,
+        })}</p>}
       </section>}
 
       {categories.length > 0 && <section className="category-overview" aria-label={t("categories")}>
@@ -547,7 +571,7 @@ function TimeWorld({ timeWorld, onPlaceSelect }) {
             <h3>{scopeKeys[scope.key] ? t(scopeKeys[scope.key]) : scope.label}</h3>
             <span>{scope.assertions.length} {t(scope.assertions.length === 1 ? "finding" : "findings")}</span>
           </div>
-          {scope.assertions.slice(0, 60).map((assertion) => (
+          {scope.assertions.map((assertion) => (
             <AssertionCard key={assertion.id} assertion={assertion} onPlaceSelect={onPlaceSelect} />
           ))}
         </section>
@@ -1319,6 +1343,10 @@ export default function App() {
     changeContext({ ...patch, anchor_mode: "time" }, 0);
     setResultsOpen(true);
     await flushPatch();
+    if (explorationRef.current.time_unbounded || explorationRef.current.space_unbounded) {
+      setResearch(null);
+      return;
+    }
     try {
       const job = await startExplorationResearch(explorationRef.current.id);
       setResearch(job);
@@ -1334,6 +1362,7 @@ export default function App() {
     startTimeWorldResearch({
       time_focus_year: focusYear,
       time_window_years: windowYears,
+      time_unbounded: false,
     });
   }
 
@@ -1372,7 +1401,7 @@ export default function App() {
       latitude: event.map_point.latitude,
       longitude: event.map_point.longitude,
       map_zoom: 6,
-      ...(hasTime ? { time_focus_year: focusYear, time_window_years: windowYears } : {}),
+      ...(hasTime ? { time_focus_year: focusYear, time_window_years: windowYears, time_unbounded: false } : {}),
       query: "",
       query_mode: "auto",
       anchor_mode: hasTime ? "time" : "space",
@@ -1434,8 +1463,8 @@ export default function App() {
         className="map"
       >
         <TileLayer noWrap attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        {(!isEnvironmentAnchor || exploration.environmental_place_name) && <Circle center={[exploration.center.latitude, exploration.center.longitude]} radius={exploration.radius_km * 1000} pathOptions={{ color: "#75d9b1", fillColor: "#75d9b1", fillOpacity: 0.12 }} />}
-        {isTimeAnchor && worldEvents.slice(0, 160).map((assertion) => assertion.location && (
+        {!exploration.space_unbounded && (!isEnvironmentAnchor || exploration.environmental_place_name) && <Circle center={[exploration.center.latitude, exploration.center.longitude]} radius={exploration.radius_km * 1000} pathOptions={{ color: "#75d9b1", fillColor: "#75d9b1", fillOpacity: 0.12 }} />}
+        {isTimeAnchor && worldEvents.map((assertion) => assertion.location && (
           <AssertionMapMarker
             key={assertion.id}
             assertion={assertion}
@@ -1523,13 +1552,16 @@ export default function App() {
         <div className="time-control">
           <div className="control-title">
             <label htmlFor="year">{t("time")}</label>
-            <input className="year-input" aria-label={t("enterYear")} type="number" min="-5000000000" max="20000" value={exploration.time_focus_year} onChange={(event) => changeContext({ time_focus_year: Number(event.target.value), anchor_mode: "time" })} />
+            <input className="year-input" aria-label={t("enterYear")} type="number" min="-5000000000" max="20000" value={exploration.time_focus_year} onChange={(event) => changeContext({ time_focus_year: Number(event.target.value), time_unbounded: false, anchor_mode: "time" })} />
           </div>
-          <input id="year" type="range" min="-1000" max={currentYear} value={Math.max(-1000, Math.min(currentYear, exploration.time_focus_year))} onChange={(event) => changeContext({ time_focus_year: Number(event.target.value), anchor_mode: "time" })} />
+          <input id="year" type="range" min="-1000" max={currentYear} value={Math.max(-1000, Math.min(currentYear, exploration.time_focus_year))} onChange={(event) => changeContext({ time_focus_year: Number(event.target.value), time_unbounded: false, anchor_mode: "time" })} />
         </div>
         <div className="focus-row">
           <label>{t("timeWindow")}
-            <select value={exploration.time_window_years} onChange={(event) => changeContext({ time_window_years: Number(event.target.value), anchor_mode: "time" }, 0)}>
+            <select value={exploration.time_unbounded ? "all" : String(exploration.time_window_years)} onChange={(event) => changeContext(event.target.value === "all"
+              ? { time_unbounded: true, anchor_mode: "time" }
+              : { time_unbounded: false, time_window_years: Number(event.target.value), anchor_mode: "time" }, 0)}>
+              <option value="all">{t("allTimes")}</option>
               {![0, 5, 50].includes(Number(exploration.time_window_years)) && (
                 <option value={exploration.time_window_years}>{t("eventWindow", { years: Number(exploration.time_window_years) * 2 })}</option>
               )}
@@ -1537,7 +1569,10 @@ export default function App() {
             </select>
           </label>
           <label>{t("radius")}
-            <select value={exploration.radius_km} onChange={(event) => changeContext({ radius_km: Number(event.target.value) }, 0)}>
+            <select value={exploration.space_unbounded ? "all" : String(exploration.radius_km)} onChange={(event) => changeContext(event.target.value === "all"
+              ? { space_unbounded: true }
+              : { space_unbounded: false, radius_km: Number(event.target.value) }, 0)}>
+              <option value="all">{t("worldwide")}</option>
               {[1, 10, 25, 50, 250, 1000].map((radius) => <option key={radius} value={radius}>{radius} km</option>)}
             </select>
           </label>
@@ -1546,7 +1581,7 @@ export default function App() {
         <div className="context-state" aria-live="polite">
           {isEnvironmentAnchor
             ? <><span>{exploration.environmental_place_name || t("worldwide")}</span><span>{t("allTimes")}</span><span>{exploration.environmental_place_name ? `${exploration.radius_km} km` : t("noFilters")}</span></>
-            : <><span>{exploration.place_name}</span><span>{yearLabel(exploration.time_focus_year)}</span><span>{exploration.radius_km} km</span></>}<small>{saving ? t("saving") : t("saved")}</small>
+            : <><span>{exploration.space_unbounded ? t("worldwide") : exploration.place_name}</span><span>{exploration.time_unbounded ? t("allTimes") : yearLabel(exploration.time_focus_year)}</span><span>{exploration.space_unbounded ? t("noFilters") : `${exploration.radius_km} km`}</span></>}<small>{saving ? t("saving") : t("saved")}</small>
         </div>
       </section>
 

@@ -230,14 +230,18 @@ def exploration_results(exploration_context):
     assertions = (
         Assertion.objects.filter(status__in=statuses)
         .filter(exploration_place_scope_filter(exploration_context))
-        .filter(Q(time_start_year__isnull=True) | Q(time_start_year__lte=exploration_context.time_end_year))
-        .filter(Q(time_end_year__isnull=True) | Q(time_end_year__gte=exploration_context.time_start_year))
         .select_related("subject", "object_entity", "location_entity")
         .prefetch_related("subject__external_identifiers", "object_entity__external_identifiers", "evidence__source", "portal_discoveries__portal")
         .annotate(distance=Distance("location", center))
         .distinct()
         .order_by("distance", "time_start_year", "-confidence")
     )
+    if not exploration_context.time_unbounded:
+        assertions = assertions.filter(
+            Q(time_start_year__isnull=True) | Q(time_start_year__lte=exploration_context.time_end_year)
+        ).filter(
+            Q(time_end_year__isnull=True) | Q(time_end_year__gte=exploration_context.time_start_year)
+        )
     if exploration_context.query and exploration_context.query_mode == ExplorationContext.QueryMode.TOPIC:
         assertions = assertions.filter(
             Q(subject__canonical_name__icontains=exploration_context.query)
@@ -303,6 +307,9 @@ def exploration_place_scope_filter(exploration_context):
     Ereigniskoordinaten bleiben für Karte und Distanz erhalten.
     """
 
+    if exploration_context.space_unbounded:
+        return Q()
+
     spatial = Q(
         location__distance_lte=(exploration_context.center, D(km=exploration_context.radius_km))
     )
@@ -347,10 +354,19 @@ def exploration_timeline_scope_filter(exploration_context):
     named_place = (
         Q(subject__canonical_name__iexact=place_name)
         | Q(location_entity__canonical_name__iexact=place_name)
+        | (
+            Q(portal_discoveries__portal__subject_entity__canonical_name__iexact=place_name)
+            & Q(portal_discoveries__title__icontains=place_name)
+        )
     )
     for language in {"en", "de", "fr", *exploration_context.languages}:
         named_place |= Q(**{f"subject__labels__{language}__iexact": place_name})
         named_place |= Q(**{f"location_entity__labels__{language}__iexact": place_name})
+        named_place |= Q(
+            **{
+                f"portal_discoveries__portal__subject_entity__labels__{language}__iexact": place_name
+            }
+        ) & Q(portal_discoveries__title__icontains=place_name)
     return spatial | named_place, local_radius_km
 
 
@@ -522,31 +538,35 @@ class ExplorationContextProcessesView(APIView):
     def get(self, request, pk):
         exploration_context = generics.get_object_or_404(ExplorationContext, pk=pk)
         statuses = exploration_statuses(exploration_context)
-        local_assertions = (
-            Assertion.objects.filter(status__in=statuses)
-            .filter(Q(time_start_year__isnull=True) | Q(time_start_year__lte=exploration_context.time_end_year))
-            .filter(Q(time_end_year__isnull=True) | Q(time_end_year__gte=exploration_context.time_start_year))
-            .filter(exploration_place_scope_filter(exploration_context))
-            .values("pk")
+        local_assertions = Assertion.objects.filter(status__in=statuses).filter(
+            exploration_place_scope_filter(exploration_context)
         )
-        queryset = (
-            process_queryset()
-            .filter(status__in=statuses)
-            .filter(Q(time_start_year__isnull=True) | Q(time_start_year__lte=exploration_context.time_end_year))
-            .filter(Q(time_end_year__isnull=True) | Q(time_end_year__gte=exploration_context.time_start_year))
-            .filter(
-                Q(defining_assertions__in=local_assertions)
-                | Q(assertion_relations__assertion__in=local_assertions)
-                | Q(spatial_scope=Assertion.SpatialScope.GLOBAL)
-                | Q(
-                    spatial_extent__dwithin=(
-                        exploration_context.center,
-                        D(km=exploration_context.radius_km),
-                    )
+        queryset = process_queryset().filter(status__in=statuses)
+        if not exploration_context.time_unbounded:
+            local_assertions = local_assertions.filter(
+                Q(time_start_year__isnull=True) | Q(time_start_year__lte=exploration_context.time_end_year)
+            ).filter(
+                Q(time_end_year__isnull=True) | Q(time_end_year__gte=exploration_context.time_start_year)
+            )
+            queryset = queryset.filter(
+                Q(time_start_year__isnull=True) | Q(time_start_year__lte=exploration_context.time_end_year)
+            ).filter(
+                Q(time_end_year__isnull=True) | Q(time_end_year__gte=exploration_context.time_start_year)
+            )
+        local_assertions = local_assertions.values("pk")
+        process_scope = (
+            Q(defining_assertions__in=local_assertions)
+            | Q(assertion_relations__assertion__in=local_assertions)
+            | Q(spatial_scope=Assertion.SpatialScope.GLOBAL)
+        )
+        if not exploration_context.space_unbounded:
+            process_scope |= Q(
+                spatial_extent__dwithin=(
+                    exploration_context.center,
+                    D(km=exploration_context.radius_km),
                 )
             )
-            .distinct()
-        )
+        queryset = queryset.filter(process_scope).distinct()
         processes = list(queryset.order_by("-confidence", "entity__canonical_name")[:100])
         level_counts = {
             level: ProcessAssertionRelation.objects.filter(
@@ -822,7 +842,7 @@ class ExplorationContextTimelineView(APIView):
 
 
 class ExplorationContextTimeWorldView(APIView):
-    """Räumliche Verteilung aller bekannten Ereignisse im gewählten Zeitfenster."""
+    """Aussagen im unabhängigen Schnittpunkt von Raum- und Zeitfokus."""
 
     SCOPE_LABELS = {
         "local": "Lokal",
@@ -833,26 +853,55 @@ class ExplorationContextTimeWorldView(APIView):
 
     def get(self, request, pk):
         exploration_context = generics.get_object_or_404(ExplorationContext, pk=pk)
-        assertions = (
-            Assertion.objects.filter(
-                status__in=exploration_statuses(exploration_context),
-                location__isnull=False,
-                time_start_year__isnull=False,
+        result_limit = integer_parameter(request, "limit", 500, 1, 1000)
+        assertions = Assertion.objects.filter(
+            status__in=exploration_statuses(exploration_context),
+            location__isnull=False,
+            time_start_year__isnull=False,
+        )
+        if not exploration_context.time_unbounded:
+            assertions = assertions.filter(
                 time_start_year__lte=exploration_context.time_end_year,
-            )
-            .filter(
+            ).filter(
                 Q(time_end_year__gte=exploration_context.time_start_year)
                 | Q(time_end_year__isnull=True, time_start_year__gte=exploration_context.time_start_year)
             )
-        )
+        if not exploration_context.space_unbounded:
+            assertions = assertions.filter(
+                location__distance_lte=(
+                    exploration_context.center,
+                    D(km=exploration_context.radius_km),
+                )
+            )
         if exploration_context.query_mode == ExplorationContext.QueryMode.TOPIC and exploration_context.query:
             assertions = assertions.filter(
                 Q(subject__canonical_name__icontains=exploration_context.query)
                 | Q(value_text__icontains=exploration_context.query)
                 | Q(predicate__icontains=exploration_context.query)
             )
-        assertions = prepared_assertions(assertions, exploration_context.center).order_by("distance", "-confidence")
-        items = list(assertions[:500])
+        total_count = assertions.values(
+            "subject_id",
+            "time_start_year",
+            "time_end_year",
+        ).distinct().count()
+        assertions = prepared_assertions(assertions, exploration_context.center).annotate(
+            support_evidence_count=Count(
+                "evidence",
+                filter=Q(evidence__relation=Evidence.Relation.SUPPORTS),
+                distinct=True,
+            ),
+        ).order_by("-confidence", "-support_evidence_count", "distance", "-updated_at")
+        candidates = list(assertions[: min(result_limit * 4, 4000)])
+        seen_events = set()
+        items = []
+        for assertion in candidates:
+            event_key = (assertion.subject_id, assertion.time_start_year, assertion.time_end_year)
+            if event_key in seen_events:
+                continue
+            seen_events.add(event_key)
+            items.append(assertion)
+            if len(items) >= result_limit:
+                break
         serialized = AssertionSerializer(
             items,
             many=True,
@@ -862,16 +911,9 @@ class ExplorationContextTimeWorldView(APIView):
             key: {"key": key, "label": label, "count": 0, "assertions": []}
             for key, label in self.SCOPE_LABELS.items()
         }
-        seen_events = set()
-        unique_items = []
         for assertion, item in zip(items, serialized):
-            event_key = (assertion.subject_id, assertion.time_start_year, assertion.time_end_year)
-            if event_key in seen_events:
-                continue
-            seen_events.add(event_key)
-            unique_items.append(assertion)
             distance_km = assertion.distance.km
-            if distance_km <= exploration_context.radius_km:
+            if distance_km <= 25:
                 scope = "local"
             elif distance_km <= 250:
                 scope = "regional"
@@ -883,29 +925,36 @@ class ExplorationContextTimeWorldView(APIView):
             scopes[scope]["count"] += 1
             scopes[scope]["assertions"].append(item)
 
-        classified, categories = category_summary(unique_items)
+        classified, categories = category_summary(items)
 
         return Response(
             {
                 "exploration_context": ExplorationContextSerializer(exploration_context).data,
-                "count": len(seen_events),
+                "count": len(items),
+                "total_count": total_count,
+                "limit": result_limit,
+                "truncated": total_count > len(items),
                 "selection": {
                     "focus_year": exploration_context.time_focus_year,
-                    "start_year": exploration_context.time_start_year,
-                    "end_year": exploration_context.time_end_year,
-                    "window_years": exploration_context.time_window_years * 2,
-                    "window_semantics": "centered",
+                    "start_year": None if exploration_context.time_unbounded else exploration_context.time_start_year,
+                    "end_year": None if exploration_context.time_unbounded else exploration_context.time_end_year,
+                    "window_years": None if exploration_context.time_unbounded else exploration_context.time_window_years * 2,
+                    "time_unbounded": exploration_context.time_unbounded,
+                    "window_semantics": "unbounded" if exploration_context.time_unbounded else "centered",
                     "reference_place": {
                         "name": exploration_context.place_name,
                         "center": {
                             "latitude": exploration_context.center.y,
                             "longitude": exploration_context.center.x,
                         },
-                        "radius_km": exploration_context.radius_km,
+                        "radius_km": None if exploration_context.space_unbounded else exploration_context.radius_km,
+                        "space_unbounded": exploration_context.space_unbounded,
                     },
                 },
                 "result_semantics": "dated_assertions_not_causal_events",
-                "scope_basis": "Geografische Entfernung vom gewählten Ort; politische Grenzen folgen mit Wikidata.",
+                "filter_semantics": "intersection_of_independent_time_and_space_axes",
+                "ranking_semantics": "confidence_then_supporting_evidence_then_distance",
+                "scope_basis": "Harte Raum- und Zeitfilter; die Einteilung beschreibt anschließend die Entfernung vom gewählten Ort.",
                 "categories": categories,
                 "patterns": time_world_patterns(classified),
                 "scopes": list(scopes.values()),
@@ -919,17 +968,21 @@ class ExplorationContextLivingConditionsView(APIView):
     def get(self, request, pk):
         exploration_context = generics.get_object_or_404(ExplorationContext, pk=pk)
         statuses = exploration_statuses(exploration_context)
-        time_filter = Q(
-            time_start_year__lte=exploration_context.time_end_year,
-            time_end_year__gte=exploration_context.time_start_year,
-        )
+        time_filter = Q()
+        if not exploration_context.time_unbounded:
+            time_filter = Q(
+                time_start_year__lte=exploration_context.time_end_year,
+                time_end_year__gte=exploration_context.time_start_year,
+            )
         wide_scopes = [
             EnvironmentalObservation.SpatialScope.HEMISPHERIC,
             EnvironmentalObservation.SpatialScope.GLOBAL,
         ]
-        spatial_filter = Q(spatial_scope__in=wide_scopes) | Q(
-            geometry__distance_lte=(exploration_context.center, D(km=exploration_context.radius_km))
-        )
+        spatial_filter = Q()
+        if not exploration_context.space_unbounded:
+            spatial_filter = Q(spatial_scope__in=wide_scopes) | Q(
+                geometry__distance_lte=(exploration_context.center, D(km=exploration_context.radius_km))
+            )
         observations = list(
             EnvironmentalObservation.objects.filter(time_filter, spatial_filter, status__in=statuses)
             .select_related("dataset", "dataset__source", "event")
@@ -938,9 +991,11 @@ class ExplorationContextLivingConditionsView(APIView):
         )
 
         influencing_event_ids = [item.event_id for item in observations if item.event_id]
-        local_event_filter = Q(
-            geometry__distance_lte=(exploration_context.center, D(km=exploration_context.radius_km))
-        )
+        local_event_filter = Q()
+        if not exploration_context.space_unbounded:
+            local_event_filter = Q(
+                geometry__distance_lte=(exploration_context.center, D(km=exploration_context.radius_km))
+            )
         events_queryset = (
             EnvironmentalEvent.objects.filter(status__in=statuses)
             .filter(Q(id__in=influencing_event_ids) | (time_filter & local_event_filter))
@@ -952,15 +1007,19 @@ class ExplorationContextLivingConditionsView(APIView):
         events = list(events_queryset[:80])
         event_ids = [item.id for item in events]
 
-        relations = list(
-            EnvironmentalRelation.objects.filter(
-                environmental_event_id__in=event_ids,
-                status__in=statuses,
+        relations_queryset = EnvironmentalRelation.objects.filter(
+            environmental_event_id__in=event_ids,
+            status__in=statuses,
+        )
+        if not exploration_context.space_unbounded:
+            relations_queryset = relations_queryset.filter(
                 historical_assertion__location__distance_lte=(
                     exploration_context.center,
                     D(km=exploration_context.radius_km),
-                ),
+                )
             )
+        relations = list(
+            relations_queryset
             .select_related(
                 "environmental_event",
                 "environmental_event__dataset",
@@ -1004,13 +1063,15 @@ class ExplorationContextLivingConditionsView(APIView):
                         "latitude": exploration_context.center.y,
                         "longitude": exploration_context.center.x,
                     },
-                    "radius_km": exploration_context.radius_km,
+                    "radius_km": None if exploration_context.space_unbounded else exploration_context.radius_km,
+                    "space_unbounded": exploration_context.space_unbounded,
                 },
                 "time_range": {
                     "focus_year": exploration_context.time_focus_year,
-                    "start_year": exploration_context.time_start_year,
-                    "end_year": exploration_context.time_end_year,
-                    "window_years": exploration_context.time_window_years * 2,
+                    "start_year": None if exploration_context.time_unbounded else exploration_context.time_start_year,
+                    "end_year": None if exploration_context.time_unbounded else exploration_context.time_end_year,
+                    "window_years": None if exploration_context.time_unbounded else exploration_context.time_window_years * 2,
+                    "time_unbounded": exploration_context.time_unbounded,
                 },
                 "assessment": assessment,
                 "uncertainty_note": environment_text(exploration_context, "causality"),
@@ -1460,6 +1521,16 @@ class ExplorationContextResearchView(APIView):
 
     def post(self, request, pk):
         exploration_context = generics.get_object_or_404(ExplorationContext, pk=pk)
+        if exploration_context.time_unbounded or exploration_context.space_unbounded:
+            return Response(
+                {
+                    "detail": (
+                        "Eine unbegrenzte Achse zeigt den vorhandenen Wissensbestand, "
+                        "startet aber keine unbeschränkte externe Recherche."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         topics = exploration_context.topics or ([exploration_context.query] if exploration_context.query else ["allgemein"])
         if exploration_context.anchor_mode == ExplorationContext.AnchorMode.TIME:
             topics = ["__time_world__", *topics]

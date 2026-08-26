@@ -1179,10 +1179,12 @@ class ExplorationContext(models.Model):
     )
     time_focus_year = models.BigIntegerField(default=1814)
     time_window_years = models.PositiveBigIntegerField(default=0)
+    time_unbounded = models.BooleanField(default=False)
     radius_km = models.PositiveIntegerField(
         default=25,
         validators=[MinValueValidator(1), MaxValueValidator(1000)],
     )
+    space_unbounded = models.BooleanField(default=False)
     query = models.CharField(max_length=500, blank=True)
     query_mode = models.CharField(max_length=16, choices=QueryMode.choices, default=QueryMode.AUTO)
     anchor_mode = models.CharField(max_length=16, choices=AnchorMode.choices, default=AnchorMode.SPACE)
