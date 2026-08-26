@@ -1721,6 +1721,36 @@ class ContextAPITests(TestCase):
         self.assertEqual(founding["count"], 1)
         self.assertEqual(len(founding["assertions"]), 1)
 
+    def test_place_timeline_does_not_match_place_name_inside_a_label(self):
+        unrelated_subject = Entity.objects.create(
+            canonical_name="Clube de Futebol Os Belenenses",
+            labels={"fr": "Clube de Futebol Os Belenenses"},
+            kind=Entity.Kind.OTHER,
+        )
+        Assertion.objects.create(
+            subject=unrelated_subject,
+            predicate="historical-mention",
+            value_text="Champion du Portugal en 1946.",
+            time_start_year=1946,
+            time_end_year=1946,
+            time_precision=Assertion.Precision.YEAR,
+            status=Assertion.Status.CANDIDATE,
+            confidence=Decimal("0.55"),
+            fingerprint="d" * 64,
+        )
+        context = ExplorationContext.objects.create(
+            place_name="Ense",
+            center=Point(7.95, 51.48, srid=4326),
+            time_focus_year=2026,
+            radius_km=1000,
+        )
+
+        response = self.client.get(f"/api/v1/exploration-contexts/{context.id}/timeline/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 0)
+        self.assertEqual(response.data["moments"], [])
+
     def test_moving_space_anchor_clears_previous_event_focus(self):
         event = Entity.objects.create(canonical_name="Früheres Ereignis", kind=Entity.Kind.EVENT)
         context = ExplorationContext.objects.create(

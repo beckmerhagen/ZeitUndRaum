@@ -329,12 +329,17 @@ def exploration_timeline_scope_filter(exploration_context):
     place_name = exploration_context.place_name.strip()
     if not place_name:
         return spatial, local_radius_km
+    # JSON ``icontains`` searches the complete serialized labels object.  That
+    # made short place names match arbitrary word fragments (for example Ense
+    # matched Bel*enese*s and Conqu*ense*).  Compare individual locale values
+    # exactly instead.
     named_place = (
         Q(subject__canonical_name__iexact=place_name)
-        | Q(subject__labels__icontains=place_name)
         | Q(location_entity__canonical_name__iexact=place_name)
-        | Q(location_entity__labels__icontains=place_name)
     )
+    for language in {"en", "de", "fr", *exploration_context.languages}:
+        named_place |= Q(**{f"subject__labels__{language}__iexact": place_name})
+        named_place |= Q(**{f"location_entity__labels__{language}__iexact": place_name})
     return spatial | named_place, local_radius_km
 
 
