@@ -1628,6 +1628,59 @@ class ContextAPITests(TestCase):
         self.assertEqual(response.data["scope"]["exploration_radius_km"], 1000)
         self.assertEqual(response.data["reference_place"]["name"], "Agra")
 
+    def test_place_timeline_keeps_older_milestone_despite_many_recent_assertions(self):
+        place = Entity.objects.create(canonical_name="Nordrhein Westfalen", kind=Entity.Kind.PLACE)
+        recent_subjects = [
+            Entity(canonical_name=f"Jüngerer Befund {index}", kind=Entity.Kind.OTHER)
+            for index in range(301)
+        ]
+        Entity.objects.bulk_create(recent_subjects)
+        Assertion.objects.bulk_create(
+            [
+                Assertion(
+                    subject=subject,
+                    predicate="historical-mention",
+                    value_text="Jüngerer Befund.",
+                    time_start_year=2025,
+                    time_end_year=2025,
+                    time_precision=Assertion.Precision.YEAR,
+                    location=Point(7.5, 51.5, srid=4326),
+                    status=Assertion.Status.CANDIDATE,
+                    confidence=Decimal("0.55"),
+                    fingerprint=f"{index:064x}",
+                )
+                for index, subject in enumerate(recent_subjects, start=1000)
+            ]
+        )
+        Assertion.objects.create(
+            subject=place,
+            location_entity=place,
+            predicate="founded",
+            value_text="Nordrhein-Westfalen wurde am 23. August 1946 gegründet.",
+            time_start_year=1946,
+            time_end_year=1946,
+            time_precision=Assertion.Precision.DAY,
+            location=Point(7.5, 51.5, srid=4326),
+            status=Assertion.Status.VERIFIED,
+            confidence=Decimal("0.95"),
+            fingerprint="f" * 64,
+        )
+        context = ExplorationContext.objects.create(
+            place_name="Nordrhein Westfalen",
+            center=Point(7.5, 51.5, srid=4326),
+            time_focus_year=2026,
+            radius_km=25,
+        )
+
+        response = self.client.get(f"/api/v1/exploration-contexts/{context.id}/timeline/")
+
+        self.assertEqual(response.status_code, 200)
+        years = [moment["year"] for moment in response.data["moments"]]
+        self.assertIn(1946, years)
+        recent = next(moment for moment in response.data["moments"] if moment["year"] == 2025)
+        self.assertEqual(recent["count"], 301)
+        self.assertEqual(len(recent["assertions"]), 4)
+
     def test_moving_space_anchor_clears_previous_event_focus(self):
         event = Entity.objects.create(canonical_name="Früheres Ereignis", kind=Entity.Kind.EVENT)
         context = ExplorationContext.objects.create(

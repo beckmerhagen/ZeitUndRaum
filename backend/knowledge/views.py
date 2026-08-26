@@ -6,7 +6,8 @@ from django.contrib.gis.db.models.functions import Distance
 from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
 from django.db import connection, transaction
-from django.db.models import Count, Max, Min, Q
+from django.db.models import Count, F, Max, Min, Q, Window
+from django.db.models.functions import Coalesce, RowNumber
 from django.shortcuts import redirect
 from django.utils import timezone
 import requests
@@ -307,6 +308,8 @@ def exploration_place_scope_filter(exploration_context):
 
 
 PLACE_TIMELINE_MAX_RADIUS_KM = 25
+PLACE_TIMELINE_MAX_MOMENTS = 300
+PLACE_TIMELINE_ASSERTIONS_PER_MOMENT = 4
 
 
 def exploration_timeline_scope_filter(exploration_context):
@@ -716,10 +719,35 @@ class ExplorationContextTimelineView(APIView):
         )
         if filtered_by_event:
             assertions = assertions.filter(focus_entity_relevance_filter(exploration_context))
-        assertions = prepared_assertions(assertions, exploration_context.center).order_by(
-            "-time_start_year", "-time_end_year", "distance", "-confidence"
+        # Limit representatives per date, not raw assertions. A busy recent year
+        # must never consume the complete result window and hide older milestones.
+        assertions = (
+            prepared_assertions(assertions, exploration_context.center)
+            .annotate(timeline_end_year=Coalesce("time_end_year", "time_start_year"))
+            .annotate(
+                timeline_rank=Window(
+                    expression=RowNumber(),
+                    partition_by=[F("time_start_year"), F("timeline_end_year")],
+                    order_by=[
+                        F("distance").asc(nulls_last=True),
+                        F("confidence").desc(),
+                        F("id").asc(),
+                    ],
+                ),
+                timeline_moment_count=Window(
+                    expression=Count("id"),
+                    partition_by=[F("time_start_year"), F("timeline_end_year")],
+                ),
+            )
+            .filter(timeline_rank__lte=PLACE_TIMELINE_ASSERTIONS_PER_MOMENT)
+            .order_by("-time_start_year", "-timeline_end_year", "timeline_rank")
         )
-        items = list(assertions[:300])
+        items = list(
+            assertions[
+                : (PLACE_TIMELINE_MAX_MOMENTS + 1)
+                * PLACE_TIMELINE_ASSERTIONS_PER_MOMENT
+            ]
+        )
         serialized = AssertionSerializer(
             items,
             many=True,
@@ -734,19 +762,21 @@ class ExplorationContextTimelineView(APIView):
                     "year": assertion.time_start_year,
                     "end_year": end_year,
                     "precision": assertion.time_precision,
-                    "count": 0,
+                    "count": assertion.timeline_moment_count,
                     "assertions": [],
                 }
             moment = moments[key]
-            moment["count"] += 1
             if len(moment["assertions"]) < 4:
                 moment["assertions"].append(item)
+
+        selected_moments = list(moments.values())[:PLACE_TIMELINE_MAX_MOMENTS]
 
         return Response(
             {
                 "exploration_context": ExplorationContextSerializer(exploration_context).data,
-                "count": len(items),
-                "moment_count": len(moments),
+                "count": sum(moment["count"] for moment in selected_moments),
+                "moment_count": len(selected_moments),
+                "is_truncated": len(moments) > PLACE_TIMELINE_MAX_MOMENTS,
                 "filter": (
                     {"type": "event", "name": exploration_context.focus_entity.canonical_name}
                     if filtered_by_event
@@ -765,7 +795,7 @@ class ExplorationContextTimelineView(APIView):
                     },
                     "radius_km": local_radius_km,
                 },
-                "moments": list(moments.values()),
+                "moments": selected_moments,
             }
         )
 

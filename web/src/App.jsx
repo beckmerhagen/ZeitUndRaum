@@ -262,11 +262,15 @@ function AssertionRelations({ relations }) {
 }
 
 function PlaceTimeline({ timeline, onMomentSelect }) {
+  const [visibleMomentCount, setVisibleMomentCount] = useState(100);
   const eventName = timeline?.filter?.type === "event" ? timeline.filter.name : "";
   const reference = timeline?.scope?.type === "place_history" ? timeline.reference_place : null;
   const moments = [...(timeline?.moments ?? [])].sort(
     (left, right) => right.year - left.year || (right.end_year ?? right.year) - (left.end_year ?? left.year),
   );
+  useEffect(() => {
+    setVisibleMomentCount(100);
+  }, [timeline?.exploration_context?.id, timeline?.reference_place?.name]);
   return (
     <section className="pivot-section" aria-label={eventName ? t("eventTimeLinksAria", { event: eventName }) : t("placeTimesAria")}>
       {reference && (
@@ -295,7 +299,7 @@ function PlaceTimeline({ timeline, onMomentSelect }) {
         </p>
       ) : (
         <div className="timeline-list">
-          {moments.slice(0, 100).map((moment) => {
+          {moments.slice(0, visibleMomentCount).map((moment) => {
           const lead = moment.assertions[0];
           const range = moment.end_year !== moment.year
             ? `${yearLabel(moment.year)}–${yearLabel(moment.end_year)}`
@@ -313,6 +317,15 @@ function PlaceTimeline({ timeline, onMomentSelect }) {
             </button>
           );
           })}
+          {visibleMomentCount < moments.length && (
+            <button
+              className="timeline-more"
+              type="button"
+              onClick={() => setVisibleMomentCount((count) => count + 100)}
+            >
+              {t("showOlderTimes", { count: Math.min(100, moments.length - visibleMomentCount) })}
+            </button>
+          )}
         </div>
       )}
     </section>

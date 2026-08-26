@@ -84,6 +84,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .timeline-moment span { overflow: hidden; color: rgba(255,255,255,.72); font-size: 12px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .timeline-moment span b { color: #f6f3eb; }
 .timeline-moment small { color: #75d9b1; font-size: 10px; }
+.timeline-more { width: 100%; padding: 11px 12px; color: #75d9b1; border: 1px solid rgba(117,217,177,.28); border-radius: 13px; background: rgba(117,217,177,.08); font: inherit; font-size: 12px; font-weight: 750; cursor: pointer; }
+.timeline-more:hover, .timeline-more:focus-visible { border-color: rgba(117,217,177,.55); background: rgba(117,217,177,.14); }
 .world-scope + .world-scope { margin-top: 21px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.1); }
 .world-context-card, .living-reference-card, .timeline-reference { display: grid; gap: 6px; margin-bottom: 16px; padding: 14px; border: 1px solid rgba(117,217,177,.22); border-radius: 16px; background: linear-gradient(135deg, rgba(117,217,177,.12), rgba(225,184,106,.06)); }
 .world-context-card > span, .living-reference-card > span, .timeline-reference > span { color: #e1b86a; font-size: 9px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
