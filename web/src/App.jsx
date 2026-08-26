@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Circle, CircleMarker, MapContainer, TileLayer, useMapEvents } from "react-leaflet";
+import { Circle, CircleMarker, MapContainer, TileLayer, Tooltip, useMapEvents } from "react-leaflet";
 import {
   ApiError,
   createExplorationContext,
@@ -112,6 +112,51 @@ function assertionDate(assertion, end = false) {
   return day == null ? `${month}.${yearLabel(year)}` : `${day}.${month}.${yearLabel(year)}`;
 }
 
+function preferredAssertionLink(assertion) {
+  const source = assertion.evidence?.[0]?.source;
+  return assertion.preferred_link || (source
+    ? { provider: source.provider, url: source.url, kind: "source", language: source.language }
+    : null);
+}
+
+function preferredAssertionLinkLabel(link) {
+  if (!link) return "";
+  if (link.kind === "wikipedia_resolver") return t("openWikipediaBestLanguage");
+  if (link.kind?.startsWith("wikipedia")) return t("openWikipedia", { language: link.language });
+  return `${link.provider}: ${t("openOriginal")}`;
+}
+
+function AssertionMapTooltip({ assertion }) {
+  const preferredLink = preferredAssertionLink(assertion);
+  const date = assertionDate(assertion);
+  const content = (
+    <>
+      <span className="map-marker-meta">{date}{date && assertion.content_category?.key ? " · " : ""}{assertion.content_category?.key ? categoryLabel(assertion.content_category.key) : ""}</span>
+      <strong>{assertion.subject.canonical_name}</strong>
+      {assertion.value && <span className="map-marker-description">{assertion.value}</span>}
+      {preferredLink && <span className="map-marker-open">{preferredAssertionLinkLabel(preferredLink)}</span>}
+    </>
+  );
+
+  return (
+    <Tooltip className="map-marker-tooltip" direction="top" offset={[0, -8]} opacity={1} interactive sticky>
+      {preferredLink ? (
+        <a
+          className="map-marker-link"
+          href={preferredLink.url}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
+          {content}
+        </a>
+      ) : <div className="map-marker-link">{content}</div>}
+    </Tooltip>
+  );
+}
+
 function contextIdFromUrl() {
   return new URLSearchParams(window.location.search).get("context") || window.localStorage.getItem(CONTEXT_STORAGE_KEY);
 }
@@ -135,6 +180,7 @@ function mergeExploration(base, patch) {
 }
 
 function MapController({ exploration, eventPlaces, environmentalEvents, onPlaceChange, onZoomChange }) {
+  const lastAutomaticViewRef = useRef("");
   const map = useMapEvents({
     click(event) {
       onPlaceChange({
@@ -150,7 +196,17 @@ function MapController({ exploration, eventPlaces, environmentalEvents, onPlaceC
     },
   });
 
+  const automaticViewKey = exploration.anchor_mode === "time"
+    ? `time:${exploration.time_focus_year}:${exploration.time_window_years}`
+    : exploration.anchor_mode === "environment"
+      ? `environment:${exploration.environmental_place_name}:${environmentalEvents.map((item) => item.id).join(",")}`
+      : exploration.anchor_mode === "event"
+        ? `event:${exploration.focus_entity?.external_id ?? exploration.focus_entity?.canonical_name ?? ""}:${eventPlaces.map((item) => item.id).join(",")}`
+        : `space:${exploration.center.latitude}:${exploration.center.longitude}:${exploration.map_zoom}`;
+
   useEffect(() => {
+    if (lastAutomaticViewRef.current === automaticViewKey) return;
+    lastAutomaticViewRef.current = automaticViewKey;
     if (exploration.anchor_mode === "time") {
       map.flyTo([22, 12], 2, { duration: 0.65 });
     } else if (exploration.anchor_mode === "environment") {
@@ -177,13 +233,12 @@ function MapController({ exploration, eventPlaces, environmentalEvents, onPlaceC
         { duration: 0.55 },
       );
     }
-  }, [environmentalEvents, eventPlaces, exploration.anchor_mode, exploration.center.latitude, exploration.center.longitude, exploration.map_zoom, map]);
+  }, [automaticViewKey, environmentalEvents, eventPlaces, exploration.anchor_mode, exploration.center.latitude, exploration.center.longitude, exploration.map_zoom, map]);
   return null;
 }
 
 function AssertionCard({ assertion, onPlaceSelect }) {
-  const source = assertion.evidence[0]?.source;
-  const preferredLink = assertion.preferred_link || (source ? { provider: source.provider, url: source.url, kind: "source", language: source.language } : null);
+  const preferredLink = preferredAssertionLink(assertion);
   const category = assertion.content_category?.key ?? "other";
   const startLabel = assertionDate(assertion);
   const endLabel = assertionDate(assertion, true);
@@ -210,11 +265,7 @@ function AssertionCard({ assertion, onPlaceSelect }) {
         </div>
         {preferredLink && (
           <a href={preferredLink.url} target="_blank" rel="noreferrer">
-            {preferredLink.kind === "wikipedia_resolver"
-              ? t("openWikipediaBestLanguage")
-              : preferredLink.kind.startsWith("wikipedia")
-                ? t("openWikipedia", { language: preferredLink.language })
-              : `${preferredLink.provider}: ${t("openOriginal")}`}
+            {preferredAssertionLinkLabel(preferredLink)}
           </a>
         )}
         <details className="provenance">
@@ -1262,8 +1313,15 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <MapContainer center={[exploration.center.latitude, exploration.center.longitude]} zoom={Number(exploration.map_zoom)} zoomControl className="map">
-        <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      <MapContainer
+        center={[exploration.center.latitude, exploration.center.longitude]}
+        zoom={Number(exploration.map_zoom)}
+        zoomControl
+        maxBounds={[[-85, -180], [85, 180]]}
+        maxBoundsViscosity={1}
+        className="map"
+      >
+        <TileLayer noWrap attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         {(!isEnvironmentAnchor || exploration.environmental_place_name) && <Circle center={[exploration.center.latitude, exploration.center.longitude]} radius={exploration.radius_km * 1000} pathOptions={{ color: "#75d9b1", fillColor: "#75d9b1", fillOpacity: 0.12 }} />}
         {isTimeAnchor && worldEvents.slice(0, 160).map((assertion) => assertion.location && (
           <CircleMarker
@@ -1271,8 +1329,9 @@ export default function App() {
             center={[assertion.location.latitude, assertion.location.longitude]}
             radius={7}
             pathOptions={{ color: "#f2c46f", fillColor: "#f2c46f", fillOpacity: 0.72, weight: 2 }}
-            eventHandlers={{ click: () => pivotToPlace(assertion) }}
-          />
+          >
+            <AssertionMapTooltip assertion={assertion} />
+          </CircleMarker>
         ))}
         {isEventAnchor && eventPlaces.slice(0, 160).map((assertion) => (
           <CircleMarker
