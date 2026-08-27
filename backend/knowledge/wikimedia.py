@@ -493,7 +493,7 @@ def nearby_wikipedia_pages(language, center, radius_km, limit=24):
             "list": "geosearch",
             "gsprimary": "all",
             "gscoord": f"{center.y}|{center.x}",
-            "gsradius": str(min(radius_km * 1000, 10000)),
+            "gsradius": str(max(10, min(radius_km * 1000, 10000))),
             "gslimit": str(min(limit, 50)),
             "gsnamespace": "0",
         },

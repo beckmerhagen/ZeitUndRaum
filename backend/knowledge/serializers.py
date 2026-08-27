@@ -720,9 +720,11 @@ class ExplorationContextSerializer(serializers.ModelSerializer):
     time_end_year = serializers.IntegerField(read_only=True)
     base_version = serializers.IntegerField(write_only=True, min_value=1, required=False)
     map_zoom = serializers.FloatField(min_value=1, max_value=20, required=False)
-    radius_km = serializers.IntegerField(min_value=1, max_value=1000, required=False)
+    radius_km = serializers.IntegerField(min_value=0, max_value=20_000, required=False)
     time_focus_year = serializers.IntegerField(min_value=-5_000_000_000, max_value=20_000, required=False)
     time_window_years = serializers.IntegerField(min_value=0, max_value=1_000_000_000, required=False)
+    time_from_year = serializers.IntegerField(min_value=-5_000_000_000, max_value=20_000, required=False, allow_null=True)
+    time_to_year = serializers.IntegerField(min_value=-5_000_000_000, max_value=20_000, required=False, allow_null=True)
     topics = serializers.ListField(child=serializers.CharField(max_length=120), required=False)
     perspectives = serializers.ListField(child=serializers.CharField(max_length=120), required=False)
     environmental_event_types = serializers.ListField(
@@ -743,6 +745,8 @@ class ExplorationContextSerializer(serializers.ModelSerializer):
             "map_zoom",
             "time_focus_year",
             "time_window_years",
+            "time_from_year",
+            "time_to_year",
             "time_unbounded",
             "time_start_year",
             "time_end_year",
@@ -772,6 +776,30 @@ class ExplorationContextSerializer(serializers.ModelSerializer):
         longitude_supplied = "longitude" in attrs
         if self.instance is None and latitude_supplied != longitude_supplied:
             raise serializers.ValidationError("Breiten- und Längengrad müssen gemeinsam angegeben werden.")
+
+        has_from = "time_from_year" in attrs
+        has_to = "time_to_year" in attrs
+        if has_from != has_to:
+            raise serializers.ValidationError("Von- und Bis-Jahr müssen gemeinsam angegeben werden.")
+
+        # Older input paths still set a midpoint and a symmetric window. They
+        # deliberately replace a previously stored exact range unless they
+        # submit both exact endpoints themselves.
+        if ("time_focus_year" in attrs or "time_window_years" in attrs) and not has_from:
+            attrs["time_from_year"] = None
+            attrs["time_to_year"] = None
+
+        from_year = attrs.get("time_from_year", getattr(self.instance, "time_from_year", None))
+        to_year = attrs.get("time_to_year", getattr(self.instance, "time_to_year", None))
+        if (from_year is None) != (to_year is None):
+            raise serializers.ValidationError("Von- und Bis-Jahr müssen gemeinsam angegeben werden.")
+        if from_year is not None:
+            if from_year > to_year:
+                raise serializers.ValidationError("Das Von-Jahr muss vor dem Bis-Jahr liegen.")
+            focus = (from_year + to_year) // 2
+            attrs["time_focus_year"] = focus
+            attrs["time_window_years"] = max(focus - from_year, to_year - focus)
+
         attrs.pop("base_version", None)
         return attrs
 

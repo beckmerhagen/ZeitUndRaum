@@ -148,7 +148,7 @@ def wikipedia_pages(language, research):
                 "generator": "geosearch",
                 "ggsprimary": "all",
                 "ggscoord": f"{research.center.y}|{research.center.x}",
-                "ggsradius": str(min(research.radius_km * 1000, 10000)),
+        "ggsradius": str(max(10, min(research.radius_km * 1000, 10000))),
                 "ggslimit": "12",
             }
         )

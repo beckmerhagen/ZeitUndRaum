@@ -123,7 +123,7 @@ class ContextAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["time"]["min_year"], -4321)
         self.assertEqual(response.data["time"]["max_year"], 19999)
-        self.assertEqual(response.data["distance"], {"min_km": 1, "max_km": 1000})
+        self.assertEqual(response.data["distance"], {"min_km": 0, "max_km": 20000})
 
     def test_assertion_v2_exposes_exact_time_space_provenance_and_reason(self):
         entity = Entity.objects.create(canonical_name="Belagerung von Malta", kind=Entity.Kind.EVENT)
@@ -1122,6 +1122,40 @@ class ContextAPITests(TestCase):
         self.assertEqual(results.status_code, 200)
         self.assertEqual(results.data["count"], 1)
         self.assertEqual(results.data["exploration_context"]["time_focus_year"], 1830)
+
+    def test_exploration_context_persists_an_exact_asymmetric_time_range(self):
+        created = self.client.post(
+            "/api/v1/exploration-contexts/",
+            {
+                "place_name": "Münster",
+                "latitude": 51.9607,
+                "longitude": 7.6261,
+                "time_from_year": 1618,
+                "time_to_year": 1648,
+                "radius_km": 20000,
+                "space_unbounded": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data["time_from_year"], 1618)
+        self.assertEqual(created.data["time_to_year"], 1648)
+        self.assertEqual(created.data["time_start_year"], 1618)
+        self.assertEqual(created.data["time_end_year"], 1648)
+        self.assertEqual(created.data["time_focus_year"], 1633)
+        self.assertEqual(created.data["time_window_years"], 15)
+        self.assertEqual(created.data["radius_km"], 20000)
+        self.assertTrue(created.data["space_unbounded"])
+
+    def test_exploration_context_rejects_a_single_time_endpoint(self):
+        created = self.client.post(
+            "/api/v1/exploration-contexts/",
+            {"time_from_year": 1618},
+            format="json",
+        )
+
+        self.assertEqual(created.status_code, 400)
 
     def test_partial_context_update_keeps_time_while_moving(self):
         context = ExplorationContext.objects.create(

@@ -1179,10 +1179,12 @@ class ExplorationContext(models.Model):
     )
     time_focus_year = models.BigIntegerField(default=1814)
     time_window_years = models.PositiveBigIntegerField(default=0)
+    time_from_year = models.BigIntegerField(null=True, blank=True)
+    time_to_year = models.BigIntegerField(null=True, blank=True)
     time_unbounded = models.BooleanField(default=False)
     radius_km = models.PositiveIntegerField(
         default=25,
-        validators=[MinValueValidator(1), MaxValueValidator(1000)],
+        validators=[MinValueValidator(0), MaxValueValidator(20_000)],
     )
     space_unbounded = models.BooleanField(default=False)
     query = models.CharField(max_length=500, blank=True)
@@ -1213,17 +1215,21 @@ class ExplorationContext(models.Model):
             models.Index(fields=["time_focus_year"]),
         ]
         constraints = [
-            models.CheckConstraint(condition=models.Q(radius_km__gte=1, radius_km__lte=1000), name="context_radius_range"),
+            models.CheckConstraint(condition=models.Q(radius_km__gte=0, radius_km__lte=20_000), name="context_radius_range"),
             models.CheckConstraint(condition=models.Q(map_zoom__gte=1, map_zoom__lte=20), name="context_zoom_range"),
             models.CheckConstraint(condition=models.Q(time_window_years__lte=1_000_000_000), name="context_time_window_range"),
         ]
 
     @property
     def time_start_year(self):
+        if self.time_from_year is not None and self.time_to_year is not None:
+            return self.time_from_year
         return self.time_focus_year - self.time_window_years
 
     @property
     def time_end_year(self):
+        if self.time_from_year is not None and self.time_to_year is not None:
+            return self.time_to_year
         return self.time_focus_year + self.time_window_years
 
     def __str__(self):

@@ -181,7 +181,7 @@ class KnowledgeBoundsView(APIView):
                 "min_year": min(years) if years else -1000,
                 "max_year": max(years) if years else current_year,
             },
-            "distance": {"min_km": 1, "max_km": 1000},
+            "distance": {"min_km": 0, "max_km": 20_000},
         })
 
 
@@ -190,7 +190,7 @@ class ContextView(APIView):
         latitude = float_parameter(request, "lat", 53.836, -90, 90)
         longitude = float_parameter(request, "lon", 9.489, -180, 180)
         year = integer_parameter(request, "year", timezone.now().year, -5_000_000_000, 20_000)
-        radius_km = integer_parameter(request, "radius_km", 25, 1, 1000)
+        radius_km = integer_parameter(request, "radius_km", 25, 0, 20_000)
         window_years = integer_parameter(request, "window_years", 10, 0, 1_000_000_000)
         query = request.query_params.get("q", "").strip()
         include_candidates = request.query_params.get("include_candidates", "true").lower() == "true"
@@ -1570,7 +1570,11 @@ class ExplorationContextResearchView(APIView):
         research_request = ResearchRequest.objects.create(
             query=exploration_context.query,
             center=exploration_context.center,
-            radius_km=exploration_context.radius_km,
+            # The exploration axis may cover the whole globe. External
+            # Wikimedia research remains deliberately bounded; broader
+            # scopes rank the already stored knowledge instead of issuing a
+            # single, excessively large upstream request.
+            radius_km=min(max(exploration_context.radius_km, 1), 1000),
             time_start_year=exploration_context.time_start_year,
             time_end_year=exploration_context.time_end_year,
             topics=topics,

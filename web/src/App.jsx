@@ -31,6 +31,8 @@ const DEFAULT_CONTEXT = {
   map_zoom: 11,
   time_focus_year: 1814,
   time_window_years: 0,
+  time_from_year: null,
+  time_to_year: null,
   time_unbounded: false,
   radius_km: 25,
   space_unbounded: false,
@@ -45,7 +47,9 @@ const DEFAULT_CONTEXT = {
   environmental_place_name: "",
 };
 
-const FOCUS_AXIS_STEPS = 10000;
+// Enough discrete positions to keep every stored year selectable even though
+// the visible axis itself is logarithmic.
+const FOCUS_AXIS_STEPS = 100000;
 const FOCUS_LOG_CURVE = 99;
 
 function clamp(value, minimum, maximum) {
@@ -1124,18 +1128,20 @@ function EventDossier({ dossier, view, onViewChange, timeWorld, onMomentSelect, 
 
 function SpaceTimeFocusLayer({ exploration, bounds, onChange, obscured }) {
   const currentYear = new Date().getFullYear();
-  const selectedStart = exploration.time_focus_year - exploration.time_window_years;
-  const selectedEnd = exploration.time_focus_year + exploration.time_window_years;
-  const minimumYear = Math.min(Number(bounds?.time?.min_year ?? -1000), selectedStart);
-  const maximumYear = Math.max(Number(bounds?.time?.max_year ?? currentYear), currentYear, selectedEnd);
-  const minimumDistance = Number(bounds?.distance?.min_km ?? 1);
-  const maximumDistance = Number(bounds?.distance?.max_km ?? 1000);
+  const legacyStart = exploration.time_focus_year - exploration.time_window_years;
+  const legacyEnd = exploration.time_focus_year + exploration.time_window_years;
+  const selectedStart = exploration.time_from_year ?? legacyStart;
+  const selectedEnd = exploration.time_to_year ?? legacyEnd;
+  const minimumYear = Number(bounds?.time?.min_year ?? -1000);
+  const maximumYear = Math.max(Number(bounds?.time?.max_year ?? currentYear), currentYear);
+  const minimumDistance = 0;
+  const maximumDistance = 20000;
   const startYear = exploration.time_unbounded ? minimumYear : clamp(selectedStart, minimumYear, maximumYear);
   const endYear = exploration.time_unbounded ? maximumYear : clamp(selectedEnd, minimumYear, maximumYear);
   const startPosition = Math.round(toLogAxisPosition(startYear, minimumYear, maximumYear) * FOCUS_AXIS_STEPS);
   const endPosition = Math.round(toLogAxisPosition(endYear, minimumYear, maximumYear) * FOCUS_AXIS_STEPS);
   const distancePosition = Math.round(toLogAxisPosition(
-    exploration.space_unbounded ? maximumDistance : exploration.radius_km,
+    exploration.space_unbounded ? maximumDistance : clamp(exploration.radius_km, minimumDistance, maximumDistance),
     minimumDistance,
     maximumDistance,
   ) * FOCUS_AXIS_STEPS);
@@ -1147,24 +1153,27 @@ function SpaceTimeFocusLayer({ exploration, bounds, onChange, obscured }) {
     const rangeEnd = Math.max(rawStart, rawEnd);
     const focus = Math.round((rangeStart + rangeEnd) / 2);
     const windowYears = Math.max(0, Math.ceil((rangeEnd - rangeStart) / 2));
+    const timeUnbounded = rangeStart <= minimumYear && rangeEnd >= maximumYear;
     onChange({
+      time_from_year: rangeStart,
+      time_to_year: rangeEnd,
       time_focus_year: focus,
       time_window_years: windowYears,
-      time_unbounded: false,
+      time_unbounded: timeUnbounded,
       anchor_mode: "time",
     }, 420);
   };
 
   const applyDistance = (position) => {
     const radius = Math.round(fromLogAxisPosition(position / FOCUS_AXIS_STEPS, minimumDistance, maximumDistance));
-    onChange({ space_unbounded: false, radius_km: clamp(radius, minimumDistance, maximumDistance) }, 420);
+    const spaceUnbounded = position >= FOCUS_AXIS_STEPS;
+    onChange({ space_unbounded: spaceUnbounded, radius_km: clamp(radius, minimumDistance, maximumDistance) }, 420);
   };
 
-  const rangeLabel = exploration.time_unbounded
-    ? `∞ · ${t("allTimes")}`
-    : startYear === endYear
-      ? yearLabel(startYear)
-      : `${yearLabel(startYear)} – ${yearLabel(endYear)}`;
+  const durationYears = Math.max(1, endYear - startYear + 1);
+  const durationLabel = exploration.time_unbounded
+    ? t("allTimes")
+    : t(durationYears === 1 ? "durationOneYear" : "durationYears", { years: durationYears });
 
   return (
     <section className={`space-time-focus-layer ${obscured ? "obscured" : ""}`} aria-label={t("focusLayerAria")}>
@@ -1172,7 +1181,14 @@ function SpaceTimeFocusLayer({ exploration, bounds, onChange, obscured }) {
         className="focus-time-axis"
         style={{ "--focus-start": `${startPosition / 100}%`, "--focus-end": `${endPosition / 100}%` }}
       >
-        <div className="focus-axis-heading"><span>{t("timeRangeAxis")}</span><strong>{rangeLabel}</strong></div>
+        <div className="focus-axis-heading">
+          <span>{t("timeRangeAxis")}</span>
+          <div className="focus-time-values">
+            <strong>{t("fromYear", { year: yearLabel(startYear) })}</strong>
+            <b>{durationLabel}</b>
+            <strong>{t("untilYear", { year: yearLabel(endYear) })}</strong>
+          </div>
+        </div>
         <div className="focus-time-track" aria-hidden="true" />
         <input
           className="focus-time-slider focus-time-slider-start"
@@ -1194,13 +1210,8 @@ function SpaceTimeFocusLayer({ exploration, bounds, onChange, obscured }) {
           onInput={(event) => applyTimeRange(startPosition, Math.max(Number(event.currentTarget.value), startPosition))}
           onChange={(event) => applyTimeRange(startPosition, Math.max(Number(event.currentTarget.value), startPosition))}
         />
-        <span className="focus-origin-label">0 · {yearLabel(minimumYear)}</span>
-        <button
-          className={exploration.time_unbounded ? "focus-infinity active" : "focus-infinity"}
-          type="button"
-          onClick={() => onChange({ time_unbounded: true, anchor_mode: "time" }, 0)}
-          title={t("allTimes")}
-        >∞</button>
+        <span className="focus-origin-label">{yearLabel(minimumYear)}</span>
+        <span className="focus-end-label">{yearLabel(maximumYear)}</span>
       </div>
 
       <div
@@ -1209,7 +1220,7 @@ function SpaceTimeFocusLayer({ exploration, bounds, onChange, obscured }) {
       >
         <div className="focus-distance-heading">
           <span>{t("distanceAxis")}</span>
-          <strong>{exploration.space_unbounded ? `∞ · ${t("worldwide")}` : `${exploration.radius_km} km`}</strong>
+          <strong>{exploration.space_unbounded ? t("worldwide") : `${exploration.radius_km} km`}</strong>
         </div>
         <input
           className="focus-distance-slider"
@@ -1221,20 +1232,14 @@ function SpaceTimeFocusLayer({ exploration, bounds, onChange, obscured }) {
           onInput={(event) => applyDistance(Number(event.currentTarget.value))}
           onChange={(event) => applyDistance(Number(event.currentTarget.value))}
         />
-        <button
-          className={exploration.space_unbounded ? "focus-distance-infinity active" : "focus-distance-infinity"}
-          type="button"
-          onClick={() => onChange({ space_unbounded: true }, 0)}
-          title={t("worldwide")}
-        >∞</button>
-        <span className="focus-distance-origin">0 · {minimumDistance} km</span>
+        <span className="focus-distance-origin">0 km</span>
+        <span className="focus-distance-end">{t("distanceMaximum", { distance: maximumDistance })}</span>
       </div>
     </section>
   );
 }
 
 export default function App() {
-  const currentYear = new Date().getFullYear();
   const [exploration, setExploration] = useState(null);
   const [queryInput, setQueryInput] = useState("");
   const [results, setResults] = useState(null);
@@ -1248,14 +1253,13 @@ export default function App() {
   const [eventView, setEventView] = useState("overview");
   const [research, setResearch] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [resultsOpen, setResultsOpen] = useState(false);
   const [legalOpen, setLegalOpen] = useState(false);
   const [resolutionMessage, setResolutionMessage] = useState("");
   const [error, setError] = useState("");
   const [knowledgeBounds, setKnowledgeBounds] = useState({
-    time: { min_year: -1000, max_year: currentYear },
-    distance: { min_km: 1, max_km: 1000 },
+    time: { min_year: -1000, max_year: new Date().getFullYear() },
+    distance: { min_km: 0, max_km: 20000 },
   });
   const explorationRef = useRef(null);
   const cardsRef = useRef(null);
@@ -1304,8 +1308,6 @@ export default function App() {
     const patch = pendingPatchRef.current;
     pendingPatchRef.current = {};
     patchInFlightRef.current = true;
-    setSaving(true);
-
     try {
       let updated;
       try {
@@ -1323,7 +1325,6 @@ export default function App() {
       setError(t("contextSaveFailed"));
     } finally {
       patchInFlightRef.current = false;
-      setSaving(false);
       if (Object.keys(pendingPatchRef.current).length > 0) {
         window.clearTimeout(patchTimerRef.current);
         patchTimerRef.current = window.setTimeout(flushPatch, 120);
@@ -1334,8 +1335,15 @@ export default function App() {
   const changeContext = useCallback((patch, delay = 280) => {
     const current = explorationRef.current;
     if (!current) return;
-    pendingPatchRef.current = { ...pendingPatchRef.current, ...patch };
-    adoptExploration(mergeExploration(current, patch));
+    const changesLegacyTime = Object.prototype.hasOwnProperty.call(patch, "time_focus_year")
+      || Object.prototype.hasOwnProperty.call(patch, "time_window_years");
+    const suppliesExactTime = Object.prototype.hasOwnProperty.call(patch, "time_from_year")
+      || Object.prototype.hasOwnProperty.call(patch, "time_to_year");
+    const normalizedPatch = changesLegacyTime && !suppliesExactTime
+      ? { ...patch, time_from_year: null, time_to_year: null }
+      : patch;
+    pendingPatchRef.current = { ...pendingPatchRef.current, ...normalizedPatch };
+    adoptExploration(mergeExploration(current, normalizedPatch));
     window.clearTimeout(patchTimerRef.current);
     patchTimerRef.current = window.setTimeout(flushPatch, delay);
   }, [adoptExploration, flushPatch]);
@@ -1362,6 +1370,8 @@ export default function App() {
     exploration?.place_name,
     exploration?.time_focus_year,
     exploration?.time_window_years,
+    exploration?.time_from_year,
+    exploration?.time_to_year,
   ]);
 
   useEffect(() => {
@@ -1457,31 +1467,6 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }
-
-  function useCurrentLocation() {
-    if (!navigator.geolocation) {
-      setError(t("noGeolocation"));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        setResearch(null);
-        setResolutionMessage("");
-        setError("");
-        changeContext({
-          place_name: t("currentLocation"),
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-          map_zoom: 12,
-          query: "",
-          query_mode: "auto",
-          anchor_mode: "space",
-        }, 0);
-      },
-      () => setError(t("geolocationDenied")),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
-    );
   }
 
   async function startTimeWorldResearch(patch) {
@@ -1698,43 +1683,6 @@ export default function App() {
       <button className="results-toggle glass" onClick={() => setResultsOpen((open) => !open)} aria-expanded={resultsOpen} aria-controls="results-panel">
         <span>{livingOpen ? livingCount : isEnvironmentAnchor ? environmentalSearch?.count ?? 0 : isEventAnchor ? eventDossier?.place_count ?? 0 : results?.count ?? 0} {t("discoveries")}</span><span aria-hidden="true">{resultsOpen ? "×" : "↑"}</span>
       </button>
-
-      <section className={`controls glass ${resultsOpen ? "behind-sheet" : ""}`} aria-label={t("spaceTimeFocus")}>
-        <div className="time-control">
-          <div className="control-title">
-            <label htmlFor="year">{t("time")}</label>
-            <input className="year-input" aria-label={t("enterYear")} type="number" min="-5000000000" max="20000" value={exploration.time_focus_year} onChange={(event) => changeContext({ time_focus_year: Number(event.target.value), time_unbounded: false, anchor_mode: "time" })} />
-          </div>
-          <input id="year" type="range" min="-1000" max={currentYear} value={Math.max(-1000, Math.min(currentYear, exploration.time_focus_year))} onChange={(event) => changeContext({ time_focus_year: Number(event.target.value), time_unbounded: false, anchor_mode: "time" })} />
-        </div>
-        <div className="focus-row">
-          <label>{t("timeWindow")}
-            <select value={exploration.time_unbounded ? "all" : String(exploration.time_window_years)} onChange={(event) => changeContext(event.target.value === "all"
-              ? { time_unbounded: true, anchor_mode: "time" }
-              : { time_unbounded: false, time_window_years: Number(event.target.value), anchor_mode: "time" }, 0)}>
-              {![0, 5, 50].includes(Number(exploration.time_window_years)) && (
-                <option value={exploration.time_window_years}>{t("eventWindow", { years: Number(exploration.time_window_years) * 2 })}</option>
-              )}
-              <option value="0">{t("exact")}</option><option value="5">{t("tenYears")}</option><option value="50">{t("hundredYears")}</option>
-              <option value="all">∞ {t("allTimes")}</option>
-            </select>
-          </label>
-          <label>{t("radius")}
-            <select value={exploration.space_unbounded ? "all" : String(exploration.radius_km)} onChange={(event) => changeContext(event.target.value === "all"
-              ? { space_unbounded: true }
-              : { space_unbounded: false, radius_km: Number(event.target.value) }, 0)}>
-              {[1, 10, 25, 50, 250, 1000].map((radius) => <option key={radius} value={radius}>{radius} km</option>)}
-              <option value="all">🌍 {t("worldwide")}</option>
-            </select>
-          </label>
-          <button className="location-button" type="button" onClick={useCurrentLocation} title={t("useCurrentLocation")}><span aria-hidden="true">◎</span><span>{t("myPlace")}</span></button>
-        </div>
-        <div className="context-state" aria-live="polite">
-          {isEnvironmentAnchor
-            ? <><span>{exploration.environmental_place_name || t("worldwide")}</span><span>{t("allTimes")}</span><span>{exploration.environmental_place_name ? `${exploration.radius_km} km` : t("noFilters")}</span></>
-            : <><span>{exploration.space_unbounded ? t("worldwide") : exploration.place_name}</span><span>{exploration.time_unbounded ? t("allTimes") : yearLabel(exploration.time_focus_year)}</span><span>{exploration.space_unbounded ? t("noFilters") : `${exploration.radius_km} km`}</span></>}<small>{saving ? t("saving") : t("saved")}</small>
-        </div>
-      </section>
 
       <aside id="results-panel" className={`results glass ${resultsOpen ? "open" : ""}`} aria-label={t("discoveriesAria")}>
         <nav className={`pivot-switch ${exploration.focus_entity || hasEnvironmentalSearch ? "has-event" : ""}`} aria-label={t("explorationDirection")}>
