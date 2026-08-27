@@ -161,6 +161,30 @@ def health(request):
     return Response({"status": "ok", "database": "PostgreSQL/PostGIS", "postgis_version": postgis_version})
 
 
+class KnowledgeBoundsView(APIView):
+    """Return the temporal extent currently represented in the knowledge base."""
+
+    def get(self, request):
+        years = []
+        for model in (Assertion, HistoricalProcess, EnvironmentalEvent, EnvironmentalObservation):
+            extent = model.objects.aggregate(
+                min_start=Min("time_start_year"),
+                min_end=Min("time_end_year"),
+                max_start=Max("time_start_year"),
+                max_end=Max("time_end_year"),
+            )
+            years.extend(year for year in extent.values() if year is not None)
+
+        current_year = timezone.now().year
+        return Response({
+            "time": {
+                "min_year": min(years) if years else -1000,
+                "max_year": max(years) if years else current_year,
+            },
+            "distance": {"min_km": 1, "max_km": 1000},
+        })
+
+
 class ContextView(APIView):
     def get(self, request):
         latitude = float_parameter(request, "lat", 53.836, -90, 90)

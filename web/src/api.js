@@ -30,6 +30,10 @@ export function loadExplorationContext(id) {
   return request(`/exploration-contexts/${id}/`);
 }
 
+export function loadKnowledgeBounds() {
+  return request("/knowledge-bounds/");
+}
+
 export function updateExplorationContext(id, patch, baseVersion) {
   return request(`/exploration-contexts/${id}/`, {
     method: "PATCH",

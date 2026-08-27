@@ -94,6 +94,37 @@ class ContextAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 0)
 
+    def test_knowledge_bounds_report_the_stored_temporal_extent(self):
+        subject = Entity.objects.get(canonical_name="Kremper Kirche St. Peter")
+        Assertion.objects.create(
+            subject=subject,
+            predicate="test-earliest-bound",
+            value_text="Frühester Testwert.",
+            time_start_year=-4321,
+            time_end_year=-4321,
+            time_precision=Assertion.Precision.YEAR,
+            status=Assertion.Status.CANDIDATE,
+            confidence=Decimal("0.5"),
+            fingerprint="2" * 64,
+        )
+        Assertion.objects.create(
+            subject=subject,
+            predicate="test-latest-bound",
+            value_text="Spätester Testwert.",
+            time_start_year=19999,
+            time_end_year=19999,
+            time_precision=Assertion.Precision.YEAR,
+            status=Assertion.Status.CANDIDATE,
+            confidence=Decimal("0.5"),
+            fingerprint="3" * 64,
+        )
+        response = self.client.get("/api/v1/knowledge-bounds/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["time"]["min_year"], -4321)
+        self.assertEqual(response.data["time"]["max_year"], 19999)
+        self.assertEqual(response.data["distance"], {"min_km": 1, "max_km": 1000})
+
     def test_assertion_v2_exposes_exact_time_space_provenance_and_reason(self):
         entity = Entity.objects.create(canonical_name="Belagerung von Malta", kind=Entity.Kind.EVENT)
         source = Source.objects.create(

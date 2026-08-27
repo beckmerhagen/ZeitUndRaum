@@ -17,6 +17,7 @@ from .views import (
     ExplorationContextTimeWorldView,
     HistoricalProcessDetailView,
     HistoricalProcessListView,
+    KnowledgeBoundsView,
     ProcessAssertionRelationListView,
     ResearchDetailView,
     ResearchListCreateView,
@@ -28,6 +29,7 @@ from .views import (
 
 urlpatterns = [
     path("health/", health, name="health"),
+    path("knowledge-bounds/", KnowledgeBoundsView.as_view(), name="knowledge-bounds"),
     path("context/", ContextView.as_view(), name="context"),
     path("assertion-relations/", AssertionRelationListView.as_view(), name="assertion-relation-list"),
     path("historical-processes/", HistoricalProcessListView.as_view(), name="historical-process-list"),

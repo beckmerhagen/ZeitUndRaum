@@ -11,6 +11,7 @@ import {
   loadExplorationTimeline,
   loadHistoricalProcesses,
   loadLivingConditions,
+  loadKnowledgeBounds,
   loadResearch,
   loadTimeWorld,
   resolveExplorationInput,
@@ -43,6 +44,25 @@ const DEFAULT_CONTEXT = {
   environmental_event_types: [],
   environmental_place_name: "",
 };
+
+const FOCUS_AXIS_STEPS = 10000;
+const FOCUS_LOG_CURVE = 99;
+
+function clamp(value, minimum, maximum) {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
+function toLogAxisPosition(value, minimum, maximum) {
+  if (maximum <= minimum) return 0;
+  const normalized = clamp((value - minimum) / (maximum - minimum), 0, 1);
+  return Math.log1p(FOCUS_LOG_CURVE * normalized) / Math.log1p(FOCUS_LOG_CURVE);
+}
+
+function fromLogAxisPosition(position, minimum, maximum) {
+  if (maximum <= minimum) return minimum;
+  const normalized = Math.expm1(clamp(position, 0, 1) * Math.log1p(FOCUS_LOG_CURVE)) / FOCUS_LOG_CURVE;
+  return minimum + normalized * (maximum - minimum);
+}
 
 const RESEARCH_STATUS_LABELS = {
   queued: t("statusQueued"),
@@ -1102,6 +1122,117 @@ function EventDossier({ dossier, view, onViewChange, timeWorld, onMomentSelect, 
   );
 }
 
+function SpaceTimeFocusLayer({ exploration, bounds, onChange, obscured }) {
+  const currentYear = new Date().getFullYear();
+  const selectedStart = exploration.time_focus_year - exploration.time_window_years;
+  const selectedEnd = exploration.time_focus_year + exploration.time_window_years;
+  const minimumYear = Math.min(Number(bounds?.time?.min_year ?? -1000), selectedStart);
+  const maximumYear = Math.max(Number(bounds?.time?.max_year ?? currentYear), currentYear, selectedEnd);
+  const minimumDistance = Number(bounds?.distance?.min_km ?? 1);
+  const maximumDistance = Number(bounds?.distance?.max_km ?? 1000);
+  const startYear = exploration.time_unbounded ? minimumYear : clamp(selectedStart, minimumYear, maximumYear);
+  const endYear = exploration.time_unbounded ? maximumYear : clamp(selectedEnd, minimumYear, maximumYear);
+  const startPosition = Math.round(toLogAxisPosition(startYear, minimumYear, maximumYear) * FOCUS_AXIS_STEPS);
+  const endPosition = Math.round(toLogAxisPosition(endYear, minimumYear, maximumYear) * FOCUS_AXIS_STEPS);
+  const distancePosition = Math.round(toLogAxisPosition(
+    exploration.space_unbounded ? maximumDistance : exploration.radius_km,
+    minimumDistance,
+    maximumDistance,
+  ) * FOCUS_AXIS_STEPS);
+
+  const applyTimeRange = (nextStartPosition, nextEndPosition) => {
+    const rawStart = Math.round(fromLogAxisPosition(nextStartPosition / FOCUS_AXIS_STEPS, minimumYear, maximumYear));
+    const rawEnd = Math.round(fromLogAxisPosition(nextEndPosition / FOCUS_AXIS_STEPS, minimumYear, maximumYear));
+    const rangeStart = Math.min(rawStart, rawEnd);
+    const rangeEnd = Math.max(rawStart, rawEnd);
+    const focus = Math.round((rangeStart + rangeEnd) / 2);
+    const windowYears = Math.max(0, Math.ceil((rangeEnd - rangeStart) / 2));
+    onChange({
+      time_focus_year: focus,
+      time_window_years: windowYears,
+      time_unbounded: false,
+      anchor_mode: "time",
+    }, 420);
+  };
+
+  const applyDistance = (position) => {
+    const radius = Math.round(fromLogAxisPosition(position / FOCUS_AXIS_STEPS, minimumDistance, maximumDistance));
+    onChange({ space_unbounded: false, radius_km: clamp(radius, minimumDistance, maximumDistance) }, 420);
+  };
+
+  const rangeLabel = exploration.time_unbounded
+    ? `∞ · ${t("allTimes")}`
+    : startYear === endYear
+      ? yearLabel(startYear)
+      : `${yearLabel(startYear)} – ${yearLabel(endYear)}`;
+
+  return (
+    <section className={`space-time-focus-layer ${obscured ? "obscured" : ""}`} aria-label={t("focusLayerAria")}>
+      <div
+        className="focus-time-axis"
+        style={{ "--focus-start": `${startPosition / 100}%`, "--focus-end": `${endPosition / 100}%` }}
+      >
+        <div className="focus-axis-heading"><span>{t("timeRangeAxis")}</span><strong>{rangeLabel}</strong></div>
+        <div className="focus-time-track" aria-hidden="true" />
+        <input
+          className="focus-time-slider focus-time-slider-start"
+          aria-label={t("timeRangeStart")}
+          type="range"
+          min="0"
+          max={FOCUS_AXIS_STEPS}
+          value={startPosition}
+          onInput={(event) => applyTimeRange(Math.min(Number(event.currentTarget.value), endPosition), endPosition)}
+          onChange={(event) => applyTimeRange(Math.min(Number(event.currentTarget.value), endPosition), endPosition)}
+        />
+        <input
+          className="focus-time-slider focus-time-slider-end"
+          aria-label={t("timeRangeEnd")}
+          type="range"
+          min="0"
+          max={FOCUS_AXIS_STEPS}
+          value={endPosition}
+          onInput={(event) => applyTimeRange(startPosition, Math.max(Number(event.currentTarget.value), startPosition))}
+          onChange={(event) => applyTimeRange(startPosition, Math.max(Number(event.currentTarget.value), startPosition))}
+        />
+        <span className="focus-origin-label">0 · {yearLabel(minimumYear)}</span>
+        <button
+          className={exploration.time_unbounded ? "focus-infinity active" : "focus-infinity"}
+          type="button"
+          onClick={() => onChange({ time_unbounded: true, anchor_mode: "time" }, 0)}
+          title={t("allTimes")}
+        >∞</button>
+      </div>
+
+      <div
+        className="focus-distance-axis"
+        style={{ "--focus-distance": `${distancePosition / 100}%` }}
+      >
+        <div className="focus-distance-heading">
+          <span>{t("distanceAxis")}</span>
+          <strong>{exploration.space_unbounded ? `∞ · ${t("worldwide")}` : `${exploration.radius_km} km`}</strong>
+        </div>
+        <input
+          className="focus-distance-slider"
+          aria-label={t("distanceAxis")}
+          type="range"
+          min="0"
+          max={FOCUS_AXIS_STEPS}
+          value={distancePosition}
+          onInput={(event) => applyDistance(Number(event.currentTarget.value))}
+          onChange={(event) => applyDistance(Number(event.currentTarget.value))}
+        />
+        <button
+          className={exploration.space_unbounded ? "focus-distance-infinity active" : "focus-distance-infinity"}
+          type="button"
+          onClick={() => onChange({ space_unbounded: true }, 0)}
+          title={t("worldwide")}
+        >∞</button>
+        <span className="focus-distance-origin">0 · {minimumDistance} km</span>
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const currentYear = new Date().getFullYear();
   const [exploration, setExploration] = useState(null);
@@ -1122,6 +1253,10 @@ export default function App() {
   const [legalOpen, setLegalOpen] = useState(false);
   const [resolutionMessage, setResolutionMessage] = useState("");
   const [error, setError] = useState("");
+  const [knowledgeBounds, setKnowledgeBounds] = useState({
+    time: { min_year: -1000, max_year: currentYear },
+    distance: { min_km: 1, max_km: 1000 },
+  });
   const explorationRef = useRef(null);
   const cardsRef = useRef(null);
   const pendingPatchRef = useRef({});
@@ -1204,6 +1339,16 @@ export default function App() {
     window.clearTimeout(patchTimerRef.current);
     patchTimerRef.current = window.setTimeout(flushPatch, delay);
   }, [adoptExploration, flushPatch]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadKnowledgeBounds()
+      .then((nextBounds) => {
+        if (!cancelled) setKnowledgeBounds(nextBounds);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!resultsOpen) return undefined;
@@ -1525,6 +1670,12 @@ export default function App() {
       </MapContainer>
 
       <div className="shade" />
+      <SpaceTimeFocusLayer
+        exploration={exploration}
+        bounds={knowledgeBounds}
+        onChange={changeContext}
+        obscured={resultsOpen || legalOpen}
+      />
       <div className="brand-bar" aria-label="Tripanion Explore">
         <a className="brand-link" href="https://tripanion.com/" target="_blank" rel="noreferrer" aria-label={t("tripanionWebsiteAria")}>
           &gt;tripanion_Explore
