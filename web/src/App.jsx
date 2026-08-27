@@ -1561,19 +1561,19 @@ export default function App() {
             <select value={exploration.time_unbounded ? "all" : String(exploration.time_window_years)} onChange={(event) => changeContext(event.target.value === "all"
               ? { time_unbounded: true, anchor_mode: "time" }
               : { time_unbounded: false, time_window_years: Number(event.target.value), anchor_mode: "time" }, 0)}>
-              <option value="all">{t("allTimes")}</option>
               {![0, 5, 50].includes(Number(exploration.time_window_years)) && (
                 <option value={exploration.time_window_years}>{t("eventWindow", { years: Number(exploration.time_window_years) * 2 })}</option>
               )}
               <option value="0">{t("exact")}</option><option value="5">{t("tenYears")}</option><option value="50">{t("hundredYears")}</option>
+              <option value="all">∞ {t("allTimes")}</option>
             </select>
           </label>
           <label>{t("radius")}
             <select value={exploration.space_unbounded ? "all" : String(exploration.radius_km)} onChange={(event) => changeContext(event.target.value === "all"
               ? { space_unbounded: true }
               : { space_unbounded: false, radius_km: Number(event.target.value) }, 0)}>
-              <option value="all">{t("worldwide")}</option>
               {[1, 10, 25, 50, 250, 1000].map((radius) => <option key={radius} value={radius}>{radius} km</option>)}
+              <option value="all">🌍 {t("worldwide")}</option>
             </select>
           </label>
           <button className="location-button" type="button" onClick={useCurrentLocation} title={t("useCurrentLocation")}><span aria-hidden="true">◎</span><span>{t("myPlace")}</span></button>
