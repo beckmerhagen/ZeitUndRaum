@@ -51,6 +51,7 @@ const DEFAULT_CONTEXT = {
 // the visible axis itself is logarithmic.
 const FOCUS_AXIS_STEPS = 100000;
 const FOCUS_LOG_CURVE = 99;
+const TIME_FOCUS_LINEAR_YEARS = 2;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
@@ -66,6 +67,32 @@ function fromLogAxisPosition(position, minimum, maximum) {
   if (maximum <= minimum) return minimum;
   const normalized = Math.expm1(clamp(position, 0, 1) * Math.log1p(FOCUS_LOG_CURVE)) / FOCUS_LOG_CURVE;
   return minimum + normalized * (maximum - minimum);
+}
+
+// A symmetric logarithmic scale keeps single years selectable around the
+// chosen focus year, while increasingly compressing centuries and millennia.
+function toTemporalAxisPosition(year, minimum, maximum, focus) {
+  if (maximum <= minimum) return 0;
+  const transform = (offset) => Math.sign(offset) * Math.log1p(Math.abs(offset) / TIME_FOCUS_LINEAR_YEARS);
+  const transformedMinimum = transform(minimum - focus);
+  const transformedMaximum = transform(maximum - focus);
+  const transformedYear = transform(clamp(year, minimum, maximum) - focus);
+  return clamp(
+    (transformedYear - transformedMinimum) / (transformedMaximum - transformedMinimum),
+    0,
+    1,
+  );
+}
+
+function fromTemporalAxisPosition(position, minimum, maximum, focus) {
+  if (maximum <= minimum) return minimum;
+  const transform = (offset) => Math.sign(offset) * Math.log1p(Math.abs(offset) / TIME_FOCUS_LINEAR_YEARS);
+  const inverse = (value) => Math.sign(value) * TIME_FOCUS_LINEAR_YEARS * Math.expm1(Math.abs(value));
+  const transformedMinimum = transform(minimum - focus);
+  const transformedMaximum = transform(maximum - focus);
+  const transformedPosition = transformedMinimum
+    + clamp(position, 0, 1) * (transformedMaximum - transformedMinimum);
+  return focus + inverse(transformedPosition);
 }
 
 const RESEARCH_STATUS_LABELS = {
@@ -121,12 +148,16 @@ const PROCESS_TYPE_KEYS = {
 
 const SPATIAL_CONTENT_CATEGORIES = new Set(["place", "building", "event", "conflict", "natural_event", "political_event", "religious_event", "cultural_event"]);
 
+function contentCategoryKey(assertion) {
+  return String(assertion?.content_category?.key ?? "other").trim().toLowerCase();
+}
+
 function categoryLabel(key) {
   return t(CONTENT_CATEGORY_KEYS[key] ?? "categoryOther");
 }
 
 function canEnterAssertionLocation(assertion) {
-  return Boolean(assertion.location && SPATIAL_CONTENT_CATEGORIES.has(assertion.content_category?.key));
+  return Boolean(assertion.location && SPATIAL_CONTENT_CATEGORIES.has(contentCategoryKey(assertion)));
 }
 
 function assertionDate(assertion, end = false) {
@@ -515,20 +546,32 @@ function PlaceTimeline({ timeline, onMomentSelect }) {
   );
 }
 
-function TimeWorld({ timeWorld, onPlaceSelect }) {
-  const [categoryFilter, setCategoryFilter] = useState("all");
+function TimeWorld({
+  timeWorld,
+  onPlaceSelect,
+  categoryFilter: controlledCategoryFilter,
+  onCategoryFilterChange,
+}) {
+  const [localCategoryFilter, setLocalCategoryFilter] = useState("all");
+  const categoryFilter = controlledCategoryFilter ?? localCategoryFilter;
+  const setCategoryFilter = onCategoryFilterChange ?? setLocalCategoryFilter;
   const categories = timeWorld?.categories ?? [];
+  const normalizedCategoryFilter = String(categoryFilter ?? "all").trim().toLowerCase();
   useEffect(() => {
-    if (categoryFilter !== "all" && !categories.some((category) => category.key === categoryFilter)) {
+    if (
+      categories.length > 0
+      && normalizedCategoryFilter !== "all"
+      && !categories.some((category) => String(category.key).trim().toLowerCase() === normalizedCategoryFilter)
+    ) {
       setCategoryFilter("all");
     }
-  }, [categories, categoryFilter]);
+  }, [categories, normalizedCategoryFilter, setCategoryFilter]);
   const populatedScopes = (timeWorld?.scopes ?? [])
     .map((scope) => ({
       ...scope,
-      assertions: categoryFilter === "all"
+      assertions: normalizedCategoryFilter === "all"
         ? scope.assertions
-        : scope.assertions.filter((assertion) => assertion.content_category?.key === categoryFilter),
+        : scope.assertions.filter((assertion) => contentCategoryKey(assertion) === normalizedCategoryFilter),
     }))
     .filter((scope) => scope.assertions.length > 0);
   const scopeKeys = { local: "scopeLocalArea", regional: "scopeRegionalArea", macroregional: "scopeMacroregional", global: "scopeWorldwide" };
@@ -568,9 +611,22 @@ function TimeWorld({ timeWorld, onPlaceSelect }) {
       {categories.length > 0 && <section className="category-overview" aria-label={t("categories")}>
         <div className="section-heading"><h3>{t("categories")}</h3><span>{timeWorld.count} {t(timeWorld.count === 1 ? "finding" : "findings")}</span></div>
         <div className="category-filters">
-          <button className={categoryFilter === "all" ? "active" : ""} type="button" onClick={() => setCategoryFilter("all")}>{t("categoryAll")} <b>{timeWorld.count}</b></button>
+          <button
+            aria-pressed={normalizedCategoryFilter === "all"}
+            className={normalizedCategoryFilter === "all" ? "active" : ""}
+            type="button"
+            onClick={() => setCategoryFilter("all")}
+          >
+            {t("categoryAll")} <b>{timeWorld.count}</b>
+          </button>
           {categories.map((category) => (
-            <button className={categoryFilter === category.key ? "active" : ""} type="button" key={category.key} onClick={() => setCategoryFilter(category.key)}>
+            <button
+              aria-pressed={normalizedCategoryFilter === String(category.key).trim().toLowerCase()}
+              className={normalizedCategoryFilter === String(category.key).trim().toLowerCase() ? "active" : ""}
+              type="button"
+              key={category.key}
+              onClick={() => setCategoryFilter(String(category.key).trim().toLowerCase())}
+            >
               {categoryLabel(category.key)} <b>{category.count}</b>
             </button>
           ))}
@@ -580,7 +636,7 @@ function TimeWorld({ timeWorld, onPlaceSelect }) {
       {patterns.length > 0 && <section className="pattern-overview" aria-label={t("patternsHypotheses")}>
         <div className="section-heading"><h3>{t("patternsHypotheses")}</h3><span>{t("interpretCautiously")}</span></div>
         {patterns.map((pattern) => (
-          <button className={`pattern-card ${pattern.evidence_level}`} type="button" key={pattern.key} onClick={() => setCategoryFilter(pattern.category)}>
+          <button className={`pattern-card ${pattern.evidence_level}`} type="button" key={pattern.key} onClick={() => setCategoryFilter(String(pattern.category).trim().toLowerCase())}>
             <span>{pattern.evidence_level === "coincidence" ? t("openQuestion") : t("automaticPattern")}</span>
             <strong>{t(`patternTitle_${pattern.key}`, { category: categoryLabel(pattern.category) })}</strong>
             <p>{t(`patternText_${pattern.key}`, { count: pattern.support_count, category: categoryLabel(pattern.category) })}</p>
@@ -1071,7 +1127,16 @@ function LegalNotice({ onClose }) {
   );
 }
 
-function EventDossier({ dossier, view, onViewChange, timeWorld, onMomentSelect, onPlaceSelect }) {
+function EventDossier({
+  dossier,
+  view,
+  onViewChange,
+  timeWorld,
+  onMomentSelect,
+  onPlaceSelect,
+  categoryFilter,
+  onCategoryFilterChange,
+}) {
   if (!dossier) {
     return <p className="empty compact">{t("dossierLoading")}</p>;
   }
@@ -1121,7 +1186,14 @@ function EventDossier({ dossier, view, onViewChange, timeWorld, onMomentSelect, 
           ? dossier.local_assertions.map((assertion) => <AssertionCard key={assertion.id} assertion={assertion} />)
           : <p className="empty compact">{t("noDirectEventLink", { place: dossier.reference_place.name })}</p>
       )}
-      {view === "world" && <TimeWorld timeWorld={timeWorld} onPlaceSelect={onPlaceSelect} />}
+      {view === "world" && (
+        <TimeWorld
+          timeWorld={timeWorld}
+          onPlaceSelect={onPlaceSelect}
+          categoryFilter={categoryFilter}
+          onCategoryFilterChange={onCategoryFilterChange}
+        />
+      )}
     </div>
   );
 }
@@ -1138,8 +1210,9 @@ function SpaceTimeFocusLayer({ exploration, bounds, onChange, obscured }) {
   const maximumDistance = 20000;
   const startYear = exploration.time_unbounded ? minimumYear : clamp(selectedStart, minimumYear, maximumYear);
   const endYear = exploration.time_unbounded ? maximumYear : clamp(selectedEnd, minimumYear, maximumYear);
-  const startPosition = Math.round(toLogAxisPosition(startYear, minimumYear, maximumYear) * FOCUS_AXIS_STEPS);
-  const endPosition = Math.round(toLogAxisPosition(endYear, minimumYear, maximumYear) * FOCUS_AXIS_STEPS);
+  const temporalFocus = clamp(Number(exploration.time_focus_year ?? currentYear), minimumYear, maximumYear);
+  const startPosition = Math.round(toTemporalAxisPosition(startYear, minimumYear, maximumYear, temporalFocus) * FOCUS_AXIS_STEPS);
+  const endPosition = Math.round(toTemporalAxisPosition(endYear, minimumYear, maximumYear, temporalFocus) * FOCUS_AXIS_STEPS);
   const distancePosition = Math.round(toLogAxisPosition(
     exploration.space_unbounded ? maximumDistance : clamp(exploration.radius_km, minimumDistance, maximumDistance),
     minimumDistance,
@@ -1147,17 +1220,16 @@ function SpaceTimeFocusLayer({ exploration, bounds, onChange, obscured }) {
   ) * FOCUS_AXIS_STEPS);
 
   const applyTimeRange = (nextStartPosition, nextEndPosition) => {
-    const rawStart = Math.round(fromLogAxisPosition(nextStartPosition / FOCUS_AXIS_STEPS, minimumYear, maximumYear));
-    const rawEnd = Math.round(fromLogAxisPosition(nextEndPosition / FOCUS_AXIS_STEPS, minimumYear, maximumYear));
+    const rawStart = Math.round(fromTemporalAxisPosition(nextStartPosition / FOCUS_AXIS_STEPS, minimumYear, maximumYear, temporalFocus));
+    const rawEnd = Math.round(fromTemporalAxisPosition(nextEndPosition / FOCUS_AXIS_STEPS, minimumYear, maximumYear, temporalFocus));
     const rangeStart = Math.min(rawStart, rawEnd);
     const rangeEnd = Math.max(rawStart, rawEnd);
-    const focus = Math.round((rangeStart + rangeEnd) / 2);
-    const windowYears = Math.max(0, Math.ceil((rangeEnd - rangeStart) / 2));
+    const windowYears = Math.max(0, Math.ceil(Math.max(temporalFocus - rangeStart, rangeEnd - temporalFocus)));
     const timeUnbounded = rangeStart <= minimumYear && rangeEnd >= maximumYear;
     onChange({
       time_from_year: rangeStart,
       time_to_year: rangeEnd,
-      time_focus_year: focus,
+      time_focus_year: temporalFocus,
       time_window_years: windowYears,
       time_unbounded: timeUnbounded,
       anchor_mode: "time",
@@ -1174,21 +1246,28 @@ function SpaceTimeFocusLayer({ exploration, bounds, onChange, obscured }) {
   const durationLabel = exploration.time_unbounded
     ? t("allTimes")
     : t(durationYears === 1 ? "durationOneYear" : "durationYears", { years: durationYears });
+  const startPercent = (startPosition / FOCUS_AXIS_STEPS) * 100;
+  const endPercent = (endPosition / FOCUS_AXIS_STEPS) * 100;
+  const midpointPercent = (startPercent + endPercent) / 2;
+  const labelsTight = endPercent - startPercent < 16;
+  const edgeClass = (percent) => (percent < 6 ? "edge-left" : percent > 94 ? "edge-right" : "");
 
   return (
     <section className={`space-time-focus-layer ${obscured ? "obscured" : ""}`} aria-label={t("focusLayerAria")}>
       <div
-        className="focus-time-axis"
-        style={{ "--focus-start": `${startPosition / 100}%`, "--focus-end": `${endPosition / 100}%` }}
+        className={`focus-time-axis ${labelsTight ? "labels-tight" : ""}`}
+        style={{ "--focus-start": `${startPercent}%`, "--focus-end": `${endPercent}%` }}
       >
         <div className="focus-axis-heading">
           <span>{t("timeRangeAxis")}</span>
-          <div className="focus-time-values">
-            <strong>{t("fromYear", { year: yearLabel(startYear) })}</strong>
-            <b>{durationLabel}</b>
-            <strong>{t("untilYear", { year: yearLabel(endYear) })}</strong>
-          </div>
         </div>
+        <strong className={`focus-thumb-label focus-thumb-label-start ${edgeClass(startPercent)}`} style={{ left: `${startPercent}%` }}>
+          {yearLabel(startYear)}
+        </strong>
+        <b className="focus-duration-label" style={{ left: `${midpointPercent}%` }}>{durationLabel}</b>
+        <strong className={`focus-thumb-label focus-thumb-label-end ${edgeClass(endPercent)}`} style={{ left: `${endPercent}%` }}>
+          {yearLabel(endYear)}
+        </strong>
         <div className="focus-time-track" aria-hidden="true" />
         <input
           className="focus-time-slider focus-time-slider-start"
@@ -1245,6 +1324,7 @@ export default function App() {
   const [results, setResults] = useState(null);
   const [timeline, setTimeline] = useState(null);
   const [timeWorld, setTimeWorld] = useState(null);
+  const [timeWorldCategoryFilter, setTimeWorldCategoryFilter] = useState("all");
   const [historicalProcesses, setHistoricalProcesses] = useState(null);
   const [livingConditions, setLivingConditions] = useState(null);
   const [environmentalSearch, setEnvironmentalSearch] = useState(null);
@@ -1568,12 +1648,21 @@ export default function App() {
     return <main className="boot"><div className="loader" /><p>{error || t("preparing")}</p></main>;
   }
 
-  const worldEvents = (timeWorld?.scopes?.flatMap((scope) => scope.assertions) ?? []).filter(canEnterAssertionLocation);
+  const normalizedTimeWorldCategoryFilter = String(timeWorldCategoryFilter ?? "all").trim().toLowerCase();
+  const matchesTimeWorldCategory = (assertion) => (
+    normalizedTimeWorldCategoryFilter === "all"
+    || contentCategoryKey(assertion) === normalizedTimeWorldCategoryFilter
+  );
+  const worldEvents = (timeWorld?.scopes?.flatMap((scope) => scope.assertions) ?? [])
+    .filter(canEnterAssertionLocation)
+    .filter(matchesTimeWorldCategory);
   const eventPlaces = eventDossier?.places?.filter((item) => item.location) ?? [];
   const isSpaceAnchor = exploration.anchor_mode === "space";
   const isEventAnchor = exploration.anchor_mode === "event";
   const isTimeAnchor = exploration.anchor_mode === "time";
   const isEnvironmentAnchor = exploration.anchor_mode === "environment";
+  const showsTimeWorld = isTimeAnchor || (isEventAnchor && eventView === "world");
+  const mapEventPlaces = isEventAnchor && eventView === "world" ? worldEvents : eventPlaces;
   const hasEnvironmentalSearch = (exploration.environmental_event_types?.length ?? 0) > 0;
   const environmentalEvents = environmentalSearch?.events ?? [];
   const livingCount = (livingConditions?.event_count ?? 0) + (livingConditions?.observation_count ?? 0) + (livingConditions?.relation_count ?? 0) + (livingConditions?.climate_series_count ?? 0);
@@ -1594,13 +1683,13 @@ export default function App() {
       >
         <TileLayer noWrap attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         {!exploration.space_unbounded && (!isEnvironmentAnchor || exploration.environmental_place_name) && <Circle center={[exploration.center.latitude, exploration.center.longitude]} radius={exploration.radius_km * 1000} pathOptions={{ color: "#75d9b1", fillColor: "#75d9b1", fillOpacity: 0.12 }} />}
-        {isTimeAnchor && worldEvents.map((assertion) => assertion.location && (
+        {showsTimeWorld && worldEvents.map((assertion) => assertion.location && (
           <AssertionMapMarker
             key={assertion.id}
             assertion={assertion}
           />
         ))}
-        {isEventAnchor && eventPlaces.slice(0, 160).map((assertion) => (
+        {isEventAnchor && eventView !== "world" && eventPlaces.slice(0, 160).map((assertion) => (
           <Marker
             key={assertion.id}
             position={[assertion.location.latitude, assertion.location.longitude]}
@@ -1618,7 +1707,7 @@ export default function App() {
         ))}
         <MapController
           exploration={exploration}
-          eventPlaces={eventPlaces}
+          eventPlaces={mapEventPlaces}
           environmentalEvents={environmentalEvents}
           onPlaceChange={async (patch) => {
             setQueryInput("");
@@ -1747,11 +1836,18 @@ export default function App() {
               timeWorld={timeWorld}
               onMomentSelect={pivotToTime}
               onPlaceSelect={pivotToPlace}
+              categoryFilter={timeWorldCategoryFilter}
+              onCategoryFilterChange={setTimeWorldCategoryFilter}
             />
           ) : (
             <>
               <HistoricalProcesses data={historicalProcesses} />
-              <TimeWorld timeWorld={timeWorld} onPlaceSelect={pivotToPlace} />
+              <TimeWorld
+                timeWorld={timeWorld}
+                onPlaceSelect={pivotToPlace}
+                categoryFilter={timeWorldCategoryFilter}
+                onCategoryFilterChange={setTimeWorldCategoryFilter}
+              />
             </>
           )}
         </div>

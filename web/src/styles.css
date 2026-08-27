@@ -13,8 +13,8 @@ button, input, select { font: inherit; }
 button, select, input[type="range"] { touch-action: manipulation; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid rgba(117,217,177,.7); outline-offset: 2px; }
 
-.app-shell { min-height: 100dvh; overflow: hidden; }
-.map { position: fixed; inset: 0; z-index: 0; width: 100vw; height: 100dvh; background: #1c2825; }
+.app-shell { --desktop-side-width: 430px; --desktop-side-gap: 18px; --desktop-side-edge: 24px; --desktop-map-right: calc(var(--desktop-side-width) + var(--desktop-side-gap) + var(--desktop-side-edge)); min-height: 100dvh; overflow: hidden; }
+.map { position: fixed; inset: 0 var(--desktop-map-right) 0 0; z-index: 0; width: auto; height: 100dvh; background: #1c2825; }
 .map .leaflet-tile-pane { filter: saturate(.45) brightness(.72) sepia(.12); }
 .map .leaflet-control-zoom { margin: calc(50dvh - 28px) 0 0 24px; border: 0; box-shadow: 0 8px 24px rgba(0,0,0,.3); }
 .map .leaflet-control-zoom a { color: #15201e; background: rgba(249,247,240,.94); border-color: rgba(20,30,28,.14); }
@@ -38,10 +38,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .map-marker-description { display: -webkit-box; overflow: hidden; color: rgba(255,255,255,.72); font-size: 12px; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .map-marker-open { align-self: flex-start; margin-top: 3px; color: #75d9b1; font-size: 11px; font-weight: 750; text-decoration: none; }
 .map-marker-open:hover, .map-marker-open:focus-visible { color: #a5f1d2; text-decoration: underline; }
-.shade { position: fixed; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(7,13,12,.74), transparent 35%, transparent 56%, rgba(7,12,11,.8)); z-index: 500; }
+.shade { position: fixed; inset: 0 var(--desktop-map-right) 0 0; pointer-events: none; background: linear-gradient(180deg, rgba(7,13,12,.74), transparent 35%, transparent 56%, rgba(7,12,11,.8)); z-index: 500; }
 .glass { background: rgba(18,27,25,.79); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 20px 55px rgba(0,0,0,.3); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
 
-.brand-bar { position: fixed; z-index: 735; top: max(9px, env(safe-area-inset-top)); left: 50%; display: flex; align-items: center; gap: 10px; transform: translateX(-50%); white-space: nowrap; }
+.brand-bar { position: fixed; z-index: 735; top: max(9px, env(safe-area-inset-top)); left: calc((100vw - var(--desktop-map-right)) / 2); display: flex; align-items: center; gap: 10px; transform: translateX(-50%); white-space: nowrap; }
 .brand-link { color: rgba(246,243,235,.82); font-size: 15px; font-weight: 520; letter-spacing: -.025em; text-decoration: none; text-shadow: 0 2px 12px rgba(0,0,0,.75); transition: color .18s ease; }
 .brand-link:hover, .brand-link:focus-visible { color: #fff; }
 .legal-trigger { padding: 4px 7px; color: rgba(255,255,255,.52); border: 1px solid rgba(255,255,255,.13); border-radius: 999px; background: rgba(18,27,25,.48); font-size: 9px; cursor: pointer; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
@@ -59,7 +59,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .invitation h1 { margin: 7px 0 8px; font-size: clamp(32px, 5vw, 54px); line-height: .98; letter-spacing: -.045em; }
 .invitation p { margin: 0; color: rgba(255,255,255,.78); }
 
-.results { position: fixed; z-index: 710; right: 24px; top: max(22px, env(safe-area-inset-top)); bottom: max(24px, env(safe-area-inset-bottom)); width: min(430px, calc(100vw - 48px)); border-radius: 24px; padding: 19px; overflow: hidden; display: flex; flex-direction: column; }
+.results { position: fixed; z-index: 710; right: var(--desktop-side-edge); top: max(22px, env(safe-area-inset-top)); bottom: max(24px, env(safe-area-inset-bottom)); width: var(--desktop-side-width); border-radius: 24px; padding: 19px; overflow: hidden; display: flex; flex-direction: column; }
 .pivot-switch { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-bottom: 16px; padding: 4px; border-radius: 14px; background: rgba(255,255,255,.055); }
 .pivot-switch.has-event { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .pivot-switch button { min-width: 0; padding: 9px 10px; color: rgba(255,255,255,.58); border: 1px solid transparent; border-radius: 11px; background: transparent; text-align: left; cursor: pointer; }
@@ -288,19 +288,27 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
    search and map. Its positions are calculated on a
    shifted logarithmic scale in App.jsx, so the visible origin can represent
    the smallest stored value without ever taking log(0). */
-.space-time-focus-layer { position: fixed; z-index: 620; inset: 0; color: #f6f3eb; pointer-events: none; transition: opacity .2s ease; }
+.space-time-focus-layer { position: fixed; z-index: 620; inset: 0 var(--desktop-map-right) 0 0; color: #f6f3eb; pointer-events: none; transition: opacity .2s ease; }
 .space-time-focus-layer.obscured { opacity: .12; }
 .space-time-focus-layer.obscured .focus-time-axis,
 .space-time-focus-layer.obscured .focus-distance-axis { pointer-events: none; }
-.focus-time-axis { position: absolute; right: 472px; bottom: max(20px, env(safe-area-inset-bottom)); left: 74px; height: 78px; pointer-events: auto; filter: drop-shadow(0 5px 13px rgba(0,0,0,.7)); }
-.focus-axis-heading { position: absolute; right: 0; bottom: 46px; left: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 14px; min-width: 0; text-shadow: 0 2px 9px rgba(0,0,0,.9); }
+.focus-time-axis { position: absolute; right: 24px; bottom: max(20px, env(safe-area-inset-bottom)); left: 74px; height: 106px; pointer-events: auto; filter: drop-shadow(0 5px 13px rgba(0,0,0,.7)); }
+.focus-axis-heading { position: absolute; right: 0; bottom: 88px; left: 0; min-width: 0; text-shadow: 0 2px 9px rgba(0,0,0,.9); }
 .focus-axis-heading span,
 .focus-distance-heading span { color: rgba(255,255,255,.7); font-size: 10px; font-weight: 850; letter-spacing: .13em; text-transform: uppercase; }
 .focus-axis-heading strong,
 .focus-distance-heading strong { overflow: hidden; color: #f6f3eb; font-size: 13px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
-.focus-time-values { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: baseline; gap: 12px; }
-.focus-time-values strong:last-child { text-align: right; }
-.focus-time-values b { color: #e1b86a; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.focus-thumb-label,
+.focus-duration-label { position: absolute; z-index: 4; transform: translateX(-50%); font-variant-numeric: tabular-nums; white-space: nowrap; text-shadow: 0 2px 9px rgba(0,0,0,.95); }
+.focus-thumb-label { bottom: 45px; padding: 3px 7px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; background: rgba(12,25,22,.9); font-size: 11px; }
+.focus-thumb-label-start { color: #e1b86a; }
+.focus-thumb-label-end { color: #75d9b1; }
+.focus-duration-label { bottom: 69px; color: #f6f3eb; font-size: 10px; letter-spacing: .04em; }
+.focus-thumb-label.edge-left { transform: none; }
+.focus-thumb-label.edge-right { transform: translateX(-100%); }
+.focus-time-axis.labels-tight .focus-thumb-label-start:not(.edge-left) { transform: translateX(-100%); }
+.focus-time-axis.labels-tight .focus-thumb-label-end:not(.edge-right) { transform: none; }
+.focus-time-axis.labels-tight .focus-duration-label { bottom: 86px; }
 .focus-time-track { position: absolute; right: 0; bottom: 29px; left: 0; height: 5px; border: 1px solid rgba(255,255,255,.46); border-radius: 999px; background: linear-gradient(90deg, rgba(255,255,255,.14) 0 var(--focus-start), #e1b86a var(--focus-start) var(--focus-end), rgba(255,255,255,.14) var(--focus-end) 100%); box-shadow: 0 2px 8px rgba(0,0,0,.45); }
 .focus-time-slider { position: absolute; right: 0; bottom: 17px; left: 0; z-index: 2; width: 100%; height: 29px; margin: 0; padding: 0; appearance: none; -webkit-appearance: none; background: transparent; pointer-events: none; }
 .focus-time-slider-end { z-index: 3; }
@@ -350,6 +358,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 1100px) {
+  .map { inset: 0; width: 100vw; }
+  .shade,
+  .space-time-focus-layer { inset: 0; }
+  .brand-bar { left: 50%; }
   .invitation { display: none; }
   .focus-time-axis { right: 24px; }
   .results-toggle { position: fixed; z-index: 720; top: max(104px, calc(env(safe-area-inset-top) + 84px)); right: 18px; min-height: 46px; display: flex; align-items: center; gap: 16px; padding: 0 15px; border-radius: 15px; color: #f6f3eb; cursor: pointer; }
@@ -367,14 +379,14 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .top-overlay { top: max(32px, calc(env(safe-area-inset-top) + 25px)); left: 10px; width: calc(100vw - 20px); }
   .search { min-height: 50px; border-radius: 15px; padding-left: 13px; }
   .search button { min-height: 38px; padding: 8px 12px; }
-  .focus-time-axis { right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); left: 55px; height: 73px; }
-  .focus-axis-heading { bottom: 43px; gap: 8px; }
+  .focus-time-axis { right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); left: 55px; height: 102px; }
+  .focus-axis-heading { bottom: 85px; }
   .focus-axis-heading span,
   .focus-distance-heading span { font-size: 8px; letter-spacing: .09em; }
   .focus-axis-heading strong,
   .focus-distance-heading strong { font-size: 11px; }
-  .focus-time-values { gap: 6px; }
-  .focus-time-values b { font-size: 9px; }
+  .focus-thumb-label { padding: 2px 5px; font-size: 9px; }
+  .focus-duration-label { font-size: 9px; }
   .focus-time-slider::-webkit-slider-thumb,
   .focus-distance-slider::-webkit-slider-thumb { width: 22px; height: 22px; }
   .focus-time-slider::-moz-range-thumb,
